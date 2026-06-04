@@ -1,0 +1,61 @@
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry]
+name = "assistant-bird"
+version = "0.1.0"
+description = "鸟助手 - A personal AI assistant with multi-agent collaboration"
+authors = ["lkk <lkk@example.com>"]
+license = "MIT"
+readme = "README.md"
+packages = [{ include = "assistant_bird", from = "src" }]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+
+# LangChain ecosystem
+langchain = "^0.3.0"
+langgraph = "^0.2.0"
+langgraph-supervisor = "^0.0.1"
+langchain-deepseek = "^0.1.0"
+langchain-community = "^0.3.0"
+
+# UI
+chainlit = "^2.0.0"
+
+# Memory
+mem0ai = "^0.1.0"
+chromadb = "^0.5.0"
+
+# Tools
+duckduckgo-search = "^6.0.0"
+httpx = "^0.28.0"
+beautifulsoup4 = "^4.12.0"
+
+# Config & Infrastructure
+pydantic-settings = "^2.0.0"
+python-dotenv = "^1.0.0"
+structlog = "^24.0.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.0.0"
+pytest-asyncio = "^0.24.0"
+pytest-mock = "^3.14.0"
+ruff = "^0.6.0"
+mypy = "^1.11.0"
+
+[tool.poetry.scripts]
+assistant-bird = "assistant_bird.main:run"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+ignore_missing_imports = true
