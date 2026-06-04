@@ -1,5 +1,55 @@
 # 开发记录 (Changelog)
 
+本文件记录鸟助手项目**除 custom_tools/ 以外**所有模块的修改历史，包括：
+- `agents/` — Agent 定义与提示词
+- `tools/` — 内置工具（搜索/抓取/注册）
+- `graph/` — LangGraph 图与状态
+- `memory/` — 记忆系统（Mem0/Chroma/SQLite）
+- `ui/` — Chainlit 界面与回调
+- `config/` — 配置与环境变量
+- 基础设施（pyproject/README/测试等）
+
+> 📖 **custom_tools/ 的修改请记录在 `src/assistant_bird/custom_tools/CHANGELOG.md`**
+
+⚠️ **强制规则：对以上任何模块的修改（新建/编辑/删除/配置变更）都必须在本文件顶部追加记录，违者视为未完成。**
+
+---
+
+## 2026-06-04 — Mem0 记忆系统配置启用
+
+### 🔧 配置 Mem0 API Key
+- 注册 Mem0 免费账户，获取 API Key，写入 `.env`
+- 记忆管道正式启用，3 层记忆全部验证通过
+- 跨会话记忆生效：刷新页面后助手能召回用户偏好
+
+### 📝 README 功能表
+- 新增「🧰 内置功能」表格（GitHub 热点 / 全球新闻 / 文章详情 / 天气查询 / 网页搜索 / 网页抓取）
+- Agent 详情表 Research 工具数 3 → 7
+
+---
+
+## 2026-06-04 — 自定义工具生态 + 爬虫增强 + UI 修复
+
+### ⚙️ custom_tools 目录
+- 创建 `custom_tools/`：4 个工具 + 开发指南 + CHANGELOG
+- `tools/registry.py`：注册 github_trending / world_news / read_news_article / get_weather
+- `agents/research.py`：提示词新增 4 工具 + 新闻场景专用流程
+
+### 🔧 tools/web_scraper.py v2.0
+- UA 池轮换（5 个浏览器）、完整请求头、3 次指数退避重试
+- 错误分类（403/404/429/5xx）、同域名限速、HTTP/2
+
+### 🔧 ui/callbacks.py
+- `recursion_limit` 25 → 50，解决工具链递归限制
+
+### 🎨 public/stylesheet.css
+- 长 URL 换行、统一字体大小、禁止水平滚动
+
+### 📦 pyproject.toml
+- `duckduckgo-search` 约束 `^6.0.0` → `>=6.0.0`
+
+---
+
 ## Phase 1: 基础框架 — 单 Agent 对话 (2026-06-04)
 
 ### 🎯 目标
