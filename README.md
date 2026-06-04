@@ -20,6 +20,17 @@
 | 🔒 本地优先 | 数据存储在本地，API Key 仅用于 LLM 推理 | ✅ |
 | 🧪 测试覆盖 | 30 个测试覆盖工具/记忆/安全 | ✅ |
 
+### 🧰 内置功能
+
+| 功能 | 命令示例 | 说明 |
+|------|---------|------|
+| 🔥 **GitHub 热点** | 「GitHub 今天最火的 Python 项目」 | 按语言 + 时间范围查看趋势仓库 |
+| 📰 **全球新闻** | 「今天有什么大事」「科技新闻」 | 多源聚合（Google/BBC/Guardian 等），支持地区/话题 |
+| 📖 **文章详情** | 「这篇新闻讲了什么」 | 按标题查找可跳转链接和摘要 |
+| 🌤️ **天气查询** | 「北京今天天气怎么样」 | 全球城市实时天气 + 7 日预报 |
+| 🔍 **网页搜索** | 「搜索 XXX」 | DuckDuckGo 实时搜索 |
+| 📄 **网页抓取** | 「帮我总结这个链接」 | 自动提取网页正文内容 |
+
 ## 🚀 快速开始
 
 ### 前提
@@ -70,7 +81,7 @@ LOG_LEVEL=INFO              # DEBUG / INFO / WARNING
   ┌────▼───┐┌──▼────┐┌──▼──────┐┌──▼──────┐
   │💬通用  ││🔍研究 ││📁文件   ││💾记忆   │
   │ Agent  ││ Agent ││ Agent   ││ Agent   │
-  │无工具  ││3工具  ││4工具    ││4工具    │
+  │无工具  ││7工具  ││4工具    ││4工具    │
   └────────┘└───────┘└─────────┘└─────────┘
 
 ┌──────────────────────────────────────────┐
@@ -85,7 +96,7 @@ LOG_LEVEL=INFO              # DEBUG / INFO / WARNING
 |-------|------|------|
 | **Supervisor** | handoff（自动生成） | 理解意图、委派任务 |
 | **General** | 无 | 对话、写作、推理、翻译、总结 |
-| **Research** | web_search, scrape_webpage, search_and_scrape | 网络搜索、信息核查、网页抓取 |
+| **Research** | web_search, scrape_webpage, search_and_scrape, github_trending, world_news, read_news_article, get_weather | 网络搜索、信息核查、网页抓取、热点追踪、新闻速览、天气查询 |
 | **File Ops** | read_file, list_directory, write_file, search_files | 文件读写、目录浏览、路径沙箱 |
 | **Memory** | recall_memories, remember_fact, search_documents, list_facts | 长期记忆、知识库搜索 |
 
