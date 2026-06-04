@@ -9,11 +9,13 @@ from langgraph.graph.state import CompiledStateGraph
 from assistant_bird.graph.builder import build_assistant_graph
 from assistant_bird.llm.deepseek import create_deepseek_model
 from assistant_bird.logging_config import get_logger
+from assistant_bird.memory.memory_manager import get_memory_manager
 from assistant_bird.ui.starters import STARTERS
 
 logger = get_logger(__name__)
 
-# Agent display names for UI
+USER_ID = "local_user"
+
 AGENT_DISPLAY = {
     "supervisor": "🧠 主管",
     "general_agent": "💬 通用助手",
@@ -43,12 +45,12 @@ async def on_chat_start() -> None:
     await cl.Message(
         content=(
             "🐦 **鸟助手 (Assistant-Bird) 已就绪！**\n\n"
-            "我现在拥有了 **多智能体协作** 能力，我的团队包括：\n"
+            "我的团队包括：\n"
             "🧠 **主管 Agent** — 理解意图，调度专家\n"
             "💬 **通用 Agent** — 对话、写作、推理\n"
             "🔍 **研究 Agent** — 网络搜索、信息获取\n"
             "📁 **文件 Agent** — 文件读写、目录浏览\n"
-            "💾 **记忆 Agent** — 记住偏好（开发中）\n\n"
+            "💾 **记忆 Agent** — 长期记忆、知识管理\n\n"
             "有什么我可以帮你的吗？"
         )
     ).send()
@@ -65,23 +67,32 @@ async def on_message(message: cl.Message) -> None:
         return
 
     app = cast(CompiledStateGraph, app)
+    user_input = message.content
+
+    # Phase 3: Inject memory context
+    memory_mgr = get_memory_manager()
+    memory_context = memory_mgr.get_context(user_input, USER_ID)
 
     state = {
-        "messages": [HumanMessage(content=message.content)],
+        "messages": [HumanMessage(content=user_input)],
         "active_agent": "supervisor",
-        "user_id": "local_user",
+        "user_id": USER_ID,
         "task_description": "",
-        "memory_context": "",
-        "should_memorize": False,
+        "memory_context": memory_context,
+        "should_memorize": True,
     }
 
-    config = {"configurable": {"thread_id": "local_user"}}
+    config = {"configurable": {"thread_id": USER_ID}}
 
     response_msg = cl.Message(content="")
     full_response = ""
     current_agent = "supervisor"
 
-    logger.info("on_message: invoking graph", message_length=len(message.content))
+    logger.info(
+        "on_message: invoking graph",
+        message_length=len(user_input),
+        memory_context_chars=len(memory_context),
+    )
 
     try:
         async for event in app.astream_events(state, config, version="v2"):
@@ -89,7 +100,7 @@ async def on_message(message: cl.Message) -> None:
             metadata = event.get("metadata", {})
             agent_name = metadata.get("langgraph_node", "")
 
-            # Detect agent switches and show a marker
+            # Detect agent switches
             if agent_name and agent_name != current_agent and agent_name in AGENT_DISPLAY:
                 current_agent = agent_name
                 await response_msg.stream_token(
@@ -121,6 +132,14 @@ async def on_message(message: cl.Message) -> None:
 
         await response_msg.send()
         logger.info("on_message: response sent", response_length=len(full_response))
+
+        # Phase 3: Store conversation in memory
+        if full_response:
+            try:
+                memory_mgr.store_conversation(USER_ID, user_input, full_response)
+                logger.info("on_message: conversation stored to memory")
+            except Exception as e:
+                logger.error("on_message: memory storage failed", error=str(e))
 
     except Exception as e:
         logger.error("on_message: streaming failed", error=str(e))
