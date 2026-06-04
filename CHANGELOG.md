@@ -138,3 +138,84 @@ Phase 2: User → Supervisor → 委派到 →
 | v0.1.0 | - | 2026-06-04 | P1 | 单 Agent 对话 + DeepSeek + Chainlit |
 | v0.2.0 | - | 2026-06-04 | P2 | 多 Agent Supervisor + 搜索 |
 | v0.3.0 | - | 2026-06-04 | P3 | Mem0 + Chroma + SQLite 三层记忆 |
+| v0.4.0 | - | 2026-06-04 | P4 | 网页抓取 + 文件写安全 + 测试套件 |
+| v0.5.0 | - | 2026-06-04 | P5 | 文档完善 + 错误处理 + 开源就绪 |
+
+---
+
+## Phase 4: 网页抓取 + 文件写安全 + 测试 (2026-06-04)
+
+### 🎯 目标
+添加网页抓取工具、完善文件操作安全机制、建立测试体系。
+
+### 📦 新增文件
+| 文件 | 说明 |
+|------|------|
+| `tools/web_scraper.py` | 双工具：scrape_webpage（httpx+BeautifulSoup 网页提取）+ search_and_scrape（搜索+自动抓取） |
+| `tests/__init__.py` | 测试包 |
+| `tests/conftest.py` | 共享 fixtures（临时目录 + 单例清理 + 环境隔离） |
+| `tests/test_tools.py` | 工具测试（WebSearch / WebScraper / FileOps / ToolRegistry）— 20 个用例 |
+| `tests/test_memory.py` | 记忆测试（VectorStore / ConversationDB / Mem0Client / MemoryManager）— 13 个用例 |
+
+### 🔄 修改文件
+| 文件 | 变化 |
+|------|------|
+| `tools/registry.py` | 新增 scrape_webpage 和 search_and_scrape 注册 |
+| `agents/research.py` | 工具从 1 个升级到 3 个（web_search + scrape_webpage + search_and_scrape） |
+| `agents/filesystem.py` | 新增 write_file（覆盖保护）+ search_files（glob 搜索）；统一 _validate_path 沙箱 |
+
+### 🔧 安全机制
+- **路径沙箱**: `_validate_path()` 统一验证，拒绝 workspace 外的任何路径
+- **覆盖保护**: write_file 检测到已存在文件时拒绝写入，提示用户确认
+- **二进制检测**: read_file 捕获 UnicodeDecodeError，明确告知用户
+- **抓取安全**: 10s 超时、User-Agent 声明、内容类型检测、8KB 截断
+
+### ✅ 测试结果
+```
+30 passed, 0 failed in 4.41s
+
+tests/test_tools.py   — 20 passed ✅
+tests/test_memory.py  — 13 passed ✅
+```
+
+覆盖范围:
+- ✅ DuckDuckGo 搜索集成测试
+- ✅ 网页抓取（无效 URL / 不存在域名）
+- ✅ 文件读写（读/写/覆盖/不存在/空目录/搜索/沙箱）
+- ✅ 工具注册中心
+- ✅ Chroma 向量存储（增删查）
+- ✅ SQLite 对话（存储/检索/搜索/摘要）
+- ✅ Mem0（禁用模式优雅降级）
+- ✅ MemoryManager 编排
+
+---
+
+## Phase 5: 打磨与开源 (2026-06-04)
+
+### 🎯 目标
+完善文档、增强错误处理、为开源发布做准备。
+
+### 📦 新增文件
+| 文件 | 说明 |
+|------|------|
+| `CONTRIBUTING.md` | 贡献指南（开发环境 / 架构 / 如何添加 Agent / 工具 / 测试） |
+
+### 🔄 修改文件
+| 文件 | 变化 |
+|------|------|
+| `README.md` | 重写：badges + ASCII 架构图 + 特性表 + 项目结构 + 开发命令 |
+| `chainlit.md` | 更新能力总览 + 实用示例 + 隐私说明 |
+| `ui/starters.py` | 对话入口更新为当前功能（搜索 / 写作 / 记忆 / 文件） |
+| `llm/deepseek.py` | 新增 `retry_call` 函数 + `is_retryable_error` + 3次重试 + 60s 超时 |
+
+### 🔧 错误处理增强
+- **DeepSeek 重试**: 指数退避（2s → 4s → 8s），识别 rate_limit/timeout/connection 等可重试错误
+- **API 超时**: 60s 请求超时防止永久挂起
+- **配置检查**: 启动时友好提示缺失 API Key + 获取链接
+
+### ✅ 验证
+```
+30 passed, 0 failed ✅
+ruff check: All checks passed ✅
+chainlit server: 启动正常 ✅
+```

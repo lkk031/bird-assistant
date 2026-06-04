@@ -4,23 +4,23 @@ import chainlit as cl
 
 STARTERS = [
     cl.Starter(
-        label="🌤️ 今日天气与新闻",
-        message="今天天气如何？有什么重要的新闻吗？",
-        icon="weather",
+        label="🔍 帮我搜索",
+        message="帮我搜索一下最近关于 AI Agent 发展的重要新闻",
+        icon="search",
     ),
     cl.Starter(
-        label="📝 帮我写点东西",
-        message="请帮我写一篇关于人工智能发展的简短文章",
+        label="📝 帮我写作",
+        message="请帮我写一篇关于多智能体系统的科普文章，用中文",
         icon="write",
     ),
     cl.Starter(
-        label="💡 解释一个概念",
-        message="请用简单的话解释一下什么是 LangGraph 多智能体系统",
-        icon="idea",
+        label="🧠 帮我记点东西",
+        message="请记住我的一些偏好：我喜欢简洁直接的答案，不喜欢啰嗦。我经常使用 Python 编程。",
+        icon="brain",
     ),
     cl.Starter(
-        label="🌐 搜索网络信息",
-        message="帮我搜索一下最近关于 DeepSeek 的最新消息（注意：搜索功能即将上线）",
-        icon="search",
+        label="📁 看看我的文件",
+        message="请列出 workspace 目录下的所有文件",
+        icon="folder",
     ),
 ]

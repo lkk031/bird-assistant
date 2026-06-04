@@ -1,8 +1,8 @@
 """Tool registry — central catalog of all available tools."""
 
-
 from langchain_core.tools import BaseTool
 
+from assistant_bird.tools.web_scraper import scrape_webpage, search_and_scrape
 from assistant_bird.tools.web_search import web_search
 
 
@@ -11,12 +11,14 @@ class ToolRegistry:
 
     Usage:
         registry = ToolRegistry()
-        tools = registry.get_tools(["web_search"])
+        tools = registry.get_tools(["web_search", "scrape_webpage"])
     """
 
     def __init__(self) -> None:
         self._tools: dict[str, BaseTool] = {
             "web_search": web_search,
+            "scrape_webpage": scrape_webpage,
+            "search_and_scrape": search_and_scrape,
         }
 
     def get_tool(self, name: str) -> BaseTool:
