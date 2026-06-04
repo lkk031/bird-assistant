@@ -1,0 +1,91 @@
+/* ── 防止长 URL / 长文本撑破布局 ── */
+/* 消息正文区域：强制换行 */
+.message-content,
+.css-1v2k5kl,
+[class*="message"] [class*="content"],
+[class*="Message"] [class*="Content"] {
+    overflow-wrap: break-word !important;
+    word-break: break-word !important;
+    overflow-x: hidden !important;
+}
+
+/* 所有 p / span / div 内的长文本自动换行 */
+p, span, div {
+    overflow-wrap: break-word;
+}
+
+/* 行内代码块：强制断行 */
+code,
+.css-1v2k5kl code,
+[class*="message"] code {
+    word-break: break-all !important;
+    overflow-wrap: anywhere !important;
+    white-space: pre-wrap !important;
+}
+
+/* 工具调用结果展示区域 */
+.tool-call-result,
+[class*="tool-call"],
+[class*="ToolCall"] {
+    word-break: break-word !important;
+    overflow-wrap: anywhere !important;
+    overflow-x: hidden !important;
+}
+
+/* ── 禁止全局水平滚动条 ── */
+html, body {
+    overflow-x: hidden !important;
+}
+
+/* 消息列表容器 */
+.chat-container,
+[class*="chat"] [class*="container"],
+[class*="Chat"] [class*="Container"],
+[class*="message-list"],
+[class*="MessageList"] {
+    overflow-x: hidden !important;
+}
+
+/* ── 统一字体大小 ── */
+/* 普通段落 */
+.message-content p,
+[class*="Message"] p {
+    font-size: 0.9375rem !important;  /* ~15px */
+    line-height: 1.6 !important;
+}
+
+/* 标题层级 */
+.message-content h1,
+[class*="Message"] h1 { font-size: 1.25rem !important; }  /* ~20px */
+.message-content h2,
+[class*="Message"] h2 { font-size: 1.125rem !important; } /* ~18px */
+.message-content h3,
+[class*="Message"] h3 { font-size: 1rem !important; }      /* ~16px */
+
+/* 列表项 */
+.message-content li,
+[class*="Message"] li {
+    font-size: 0.9375rem !important;
+}
+
+/* 工具调用折叠面板内的文字 */
+[class*="collapsed"] code,
+[class*="Collapsed"] code,
+[class*="accordion"] code {
+    font-size: 0.8125rem !important;  /* ~13px, 工具结果略小 */
+    word-break: break-all !important;
+}
+
+/* ── 链接样式优化 ── */
+a {
+    word-break: break-all !important;
+    overflow-wrap: anywhere !important;
+}
+
+/* ── 确保代码块不溢出 ── */
+pre {
+    white-space: pre-wrap !important;
+    word-break: break-all !important;
+    overflow-x: auto !important;
+    max-width: 100% !important;
+}

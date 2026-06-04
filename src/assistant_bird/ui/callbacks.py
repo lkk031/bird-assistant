@@ -82,7 +82,7 @@ async def on_message(message: cl.Message) -> None:
         "should_memorize": True,
     }
 
-    config = {"configurable": {"thread_id": USER_ID}}
+    config = {"configurable": {"thread_id": USER_ID}, "recursion_limit": 50}
 
     response_msg = cl.Message(content="")
     full_response = ""
