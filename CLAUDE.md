@@ -6,7 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 # Development
-poetry run chainlit run src/assistant_bird/main.py -w    # Start dev server (hot-reload)
+poetry run chainlit run src/assistant_bird/main.py       # Start server (不加 -w，否则助手写 workspace 文件会触发 reload 导致页面刷新)
+poetry run chainlit run src/assistant_bird/main.py -w    # 开发模式（仅在纯代码开发时用，助手运行时勿用）
 poetry run assistant-bird                                # CLI alias
 
 # Code quality

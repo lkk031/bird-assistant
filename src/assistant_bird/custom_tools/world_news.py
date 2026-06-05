@@ -21,7 +21,12 @@ from assistant_bird.logging_config import get_logger
 
 logger = get_logger(__name__)
 
-TIMEOUT = 15.0
+# Fine-grained timeout to prevent hanging on unresponsive servers.
+# connect=5s ensures TCP connect fails fast (OS TCP timeout can be 127s).
+# read=10s caps response body wait; total per-feed ≤ ~15s.
+HTTP_TIMEOUT = httpx.Timeout(connect=5.0, read=10.0, write=5.0, pool=5.0)
+# Overall timeout for all parallel fetches combined — must not exceed ~20s.
+FETCH_TOTAL_TIMEOUT = 18.0
 USER_AGENT = (
     "Mozilla/5.0 (compatible; AssistantBird/0.1; +https://github.com/lkk031/bird-assistant)"
 )
@@ -57,6 +62,19 @@ NEWS_SOURCES = [
         "lang": "en",
         "source_type": "direct",
     },
+    # Domestic-accessible sources — reachable without proxy
+    {
+        "name": "RSS Hub 环球",
+        "url": "https://rsshub.app/world",
+        "lang": "zh",
+        "source_type": "direct",
+    },
+    {
+        "name": "CGTN World",
+        "url": "https://www.cgtn.com/subscribe/rss/section/world.xml",
+        "lang": "en",
+        "source_type": "direct",
+    },
 ]
 
 # Region-specific sources
@@ -67,6 +85,31 @@ REGION_SOURCES = {
             "url": "https://news.google.com/rss?hl=zh-CN&gl=CN&ceid=CN:zh-Hans",
             "lang": "zh",
             "source_type": "aggregator",
+        },
+        # Domestic-accessible Chinese sources
+        {
+            "name": "RSS Hub 微博热搜",
+            "url": "https://rsshub.app/weibo/search/hot",
+            "lang": "zh",
+            "source_type": "direct",
+        },
+        {
+            "name": "RSS Hub 知乎热榜",
+            "url": "https://rsshub.app/zhihu/hotlist",
+            "lang": "zh",
+            "source_type": "direct",
+        },
+        {
+            "name": "RSS Hub 百度热搜",
+            "url": "https://rsshub.app/baidu/top",
+            "lang": "zh",
+            "source_type": "direct",
+        },
+        {
+            "name": "SCMP",
+            "url": "https://www.scmp.com/rss/91/feed",
+            "lang": "en",
+            "source_type": "direct",
         },
     ],
     "us": [
@@ -94,6 +137,14 @@ REGION_SOURCES = {
             "name": "The Guardian",
             "url": "https://www.theguardian.com/world/rss",
             "lang": "en",
+            "source_type": "direct",
+        },
+    ],
+    "tech": [
+        {
+            "name": "RSS Hub 36氪",
+            "url": "https://rsshub.app/36kr/motif/0",
+            "lang": "zh",
             "source_type": "direct",
         },
     ],
@@ -128,21 +179,16 @@ def _fetch_one_feed(source: dict, max_items: int) -> list[dict]:
     Returns list of {title, url, source_name, source_type, published}.
     URLs from direct sources (BBC, Guardian) are real article links.
     URLs from aggregators (Google News) are human-clickable preview pages.
+
+    Raises httpx.HTTPError / TimeoutException on network failure so the
+    caller can distinguish "feed unreachable" from "feed empty".
     """
-    try:
-        with httpx.Client(timeout=TIMEOUT, follow_redirects=True) as client:
-            response = client.get(
-                source["url"],
-                headers={"User-Agent": USER_AGENT},
-            )
-            response.raise_for_status()
-    except Exception as e:
-        logger.warning(
-            "world_news: feed failed",
-            source=source["name"],
-            error=str(e)[:80],
+    with httpx.Client(timeout=HTTP_TIMEOUT, follow_redirects=True) as client:
+        response = client.get(
+            source["url"],
+            headers={"User-Agent": USER_AGENT},
         )
-        return []
+        response.raise_for_status()
 
     try:
         root = ET.fromstring(response.text)
@@ -239,35 +285,51 @@ def _deduplicate(items: list[dict]) -> list[dict]:
     return result
 
 
-def _fetch_headlines(sources: list[dict], max_results: int) -> tuple[list[dict], list[str]]:
-    """Fetch headlines from multiple sources in parallel, deduplicate, return top N.
+def _fetch_headlines(
+    sources: list[dict], max_results: int,
+) -> tuple[list[dict], list[str], list[str]]:
+    """Fetch headlines from multiple sources in parallel with overall timeout.
 
-    Returns (items, all_source_names) where all_source_names includes ALL fetched
-    sources (even those whose items were deduplicated away).
+    Returns (items, all_source_names, failed_source_names).
+    - items: deduplicated, interleaved headlines (capped at max_results)
+    - all_source_names: names of sources that returned ≥1 item
+    - failed_source_names: names of sources that threw or timed out
     """
-    all_items = []
+    all_items: list[dict] = []
+    failed_sources: list[str] = []
+    max_workers = min(len(sources), 5)  # Cap threads to avoid connection storms
 
-    with ThreadPoolExecutor(max_workers=len(sources)) as executor:
-        futures = {
-            executor.submit(_fetch_one_feed, src, max_results): src
-            for src in sources
-        }
-        for future in as_completed(futures):
-            try:
-                items = future.result()
-                if items:
-                    logger.info(
-                        "world_news: source OK",
-                        source=futures[future]["name"],
-                        count=len(items),
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {executor.submit(_fetch_one_feed, src, max_results): src for src in sources}
+        try:
+            for future in as_completed(futures, timeout=FETCH_TOTAL_TIMEOUT):
+                src = futures[future]
+                try:
+                    items = future.result()  # already completed, returns instantly
+                    if items:
+                        logger.info(
+                            "world_news: source OK",
+                            source=src["name"],
+                            count=len(items),
+                        )
+                    all_items.extend(items)
+                except Exception as e:
+                    failed_sources.append(src["name"])
+                    logger.warning(
+                        "world_news: source failed",
+                        source=src["name"],
+                        error=str(e)[:80],
                     )
-                all_items.extend(items)
-            except Exception as e:
-                logger.warning(
-                    "world_news: source error",
-                    source=futures[future]["name"],
-                    error=str(e)[:80],
-                )
+        except TimeoutError:
+            # Mark all incomplete futures as failed
+            for f, src in futures.items():
+                if not f.done():
+                    f.cancel()
+                    failed_sources.append(src["name"])
+                    logger.warning(
+                        "world_news: source timed out (global)",
+                        source=src["name"],
+                    )
 
     # Track all source names BEFORE dedup
     all_source_names = list(dict.fromkeys(
@@ -278,7 +340,7 @@ def _fetch_headlines(sources: list[dict], max_results: int) -> tuple[list[dict],
     unique = _deduplicate(all_items)
     aggregator_items = [i for i in unique if i["source_type"] == "aggregator"]
     direct_items = [i for i in unique if i["source_type"] == "direct"]
-    interleaved = []
+    interleaved: list[dict] = []
     max_len = max(len(aggregator_items), len(direct_items))
     for i in range(max_len):
         if i < len(aggregator_items):
@@ -286,7 +348,7 @@ def _fetch_headlines(sources: list[dict], max_results: int) -> tuple[list[dict],
         if i < len(direct_items):
             interleaved.append(direct_items[i])
 
-    return interleaved[:max_results], all_source_names
+    return interleaved[:max_results], all_source_names, failed_sources
 
 
 @tool
@@ -321,6 +383,14 @@ def world_news(
     max_results = min(max(max_results, 1), 25)
     region_label = REGION_LABELS.get(region, region)
 
+    # ── Anti-hallucination note injected when ALL sources fail ──
+    fail_all_msg = (
+        f"⚠️ **暂时无法获取{region_label}新闻。**\n\n"
+        f"所有新闻源当前均不可用（可能网络波动或被限流）。\n\n"
+        f"**重要**：请勿编造或凭记忆生成新闻内容。诚实告知用户「暂无法获取实时新闻」，"
+        f"建议用户稍后重试，或告知用户本助手更适合查询基于训练数据的通用知识。"
+    )
+
     if not topic or not topic.strip():
         # ── Headlines: multi-source aggregation ──
         if region in TOPIC_FEEDS:
@@ -330,27 +400,69 @@ def world_news(
                 "lang": "en",
                 "source_type": "aggregator",
             }]
+            # Merge region-specific sources for this topic (e.g. RSS Hub 36氪 for tech)
+            extra = REGION_SOURCES.get(region, [])
+            sources.extend(extra)
         else:
             # Combine global sources + region-specific sources
             sources = list(NEWS_SOURCES)
             extra = REGION_SOURCES.get(region, [])
             sources.extend(extra)
 
-        items, all_sources = _fetch_headlines(sources, max_results)
+        items, all_sources, failed_sources = _fetch_headlines(sources, max_results)
 
         if not items:
-            return f"无法获取 {region_label} 新闻头条，请稍后重试。"
+            # ALL sources failed → try web_search as last resort
+            if failed_sources:
+                logger.warning(
+                    "world_news: all RSS sources failed, trying web_search fallback",
+                    region=region,
+                )
+                from assistant_bird.tools.web_search import web_search
+                try:
+                    now = datetime.now(UTC)
+                    result = web_search.invoke({
+                        "query": (
+                            f"{region_label} news headlines "
+                            f"{now.strftime('%Y-%m-%d')}"
+                        ),
+                        "num_results": min(max_results, 10),
+                    })
+                    return (
+                        f"## 🌍 {region_label}新闻\n\n"
+                        f"> ⚠️ 所有 RSS 新闻源不可用，以下为网页搜索结果"
+                        f"（可能包含非新闻内容）。\n\n"
+                        f"{result}"
+                    )
+                except Exception:
+                    pass  # web_search also failed → anti-hallucination message
+
+            if failed_sources:
+                return (
+                    f"{fail_all_msg}\n\n"
+                    f"📋 失败的源: {', '.join(failed_sources)}"
+                )
+            return fail_all_msg
 
         now = datetime.now(UTC)
         src_names = list(dict.fromkeys(all_sources))
         lines = [
             f"## 🌍 {region_label}新闻头条",
-            f"（{now.strftime('%Y-%m-%d %H:%M UTC')} · {len(src_names)} 个来源）",
-            "",
-            "> 💡 多源聚合，避免单一视角。点击链接阅读全文。"
-            "想看 AI 总结？用 `read_news_article` 查找。",
+            f"（{now.strftime('%Y-%m-%d %H:%M UTC')} · {len(src_names)}/{len(sources)} 源可用）",
             "",
         ]
+
+        # Note failed sources if partial success
+        if failed_sources:
+            lines.append(
+                f"> ⚠️ 部分来源不可用 ({', '.join(failed_sources)})。"
+                "显示结果来自可用源，可能不够全面。\n"
+            )
+        else:
+            lines.append(
+                "> 💡 多源聚合，避免单一视角。\n"
+            )
+
         for i, item in enumerate(items, 1):
             pub = f" · {item['published']}" if item["published"] else ""
             url = item.get("url", "")
@@ -375,12 +487,65 @@ def world_news(
             f"https://news.google.com/rss/search?"
             f"q={encoded}&hl=en-US&gl=US&ceid=US:en"
         )
-        source = {"name": "Google News", "url": url, "lang": "en", "source_type": "aggregator"}
-        items = _fetch_one_feed(source, max_results)
+        source = {
+            "name": "Google News",
+            "url": url,
+            "lang": "en",
+            "source_type": "aggregator",
+        }
+
+        try:
+            items = _fetch_one_feed(source, max_results)
+        except Exception as e:
+            logger.warning(
+                "world_news: topic search failed, falling back to web_search",
+                topic=topic,
+                error=str(e)[:80],
+            )
+            # Fallback: use web_search for news
+            from assistant_bird.tools.web_search import web_search
+            try:
+                result = web_search.invoke({
+                    "query": f"{topic} news today",
+                    "num_results": min(max_results, 10),
+                })
+                return (
+                    f"## 📰 新闻搜索: {topic.strip()}\n\n"
+                    f"> ⚠️ Google News RSS 不可用，以下为网页搜索结果。\n\n"
+                    f"{result}"
+                )
+            except Exception as e2:
+                logger.error(
+                    "world_news: both RSS and web_search failed",
+                    topic=topic,
+                    error=str(e2)[:80],
+                )
+                return fail_all_msg
 
         if not items:
+            # Try web_search as fallback for empty RSS results
+            logger.info(
+                "world_news: topic RSS empty, trying web_search",
+                topic=topic,
+            )
+            from assistant_bird.tools.web_search import web_search
+            try:
+                result = web_search.invoke({
+                    "query": f"{topic} news today",
+                    "num_results": min(max_results, 10),
+                })
+                return (
+                    f"## 📰 新闻搜索: {topic.strip()}\n\n"
+                    f"> ⚠️ Google News RSS 无结果，以下为网页搜索结果。\n\n"
+                    f"{result}"
+                )
+            except Exception:
+                pass  # Fallback also failed, return original message below
+
             return (
-                f"未找到关于「{topic}」的新闻。试试缩短关键词。"
+                f"⚠️ 未找到关于「{topic.strip()}」的新闻。"
+                "Google News RSS 和网页搜索均未返回匹配结果。\n\n"
+                "试试缩短关键词，或稍后重试。"
             )
 
         lines = [f"## 📰 新闻搜索: {topic.strip()}", ""]

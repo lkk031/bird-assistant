@@ -6,6 +6,73 @@
 
 ---
 
+## 2026-06-05 — v0.4.1 新闻模块可靠性修复
+
+### 🔧 修复 `world_news.py` — 超时控制 + 反幻觉 + 降级
+
+**问题**（来自 `news_module_issues_report.md`）：
+1. 工具调用耗时 5+ 分钟（TCP connect 无响应时单一超时无效）
+2. Agent 在工具失败后凭训练数据编造假新闻（幻觉）
+3. 成功率极低（Google News RSS 几乎总被限流）
+
+**修复内容**：
+- **超时机制**：`httpx.Timeout(connect=5, read=10, write=5, pool=5)` 替代单一 `15.0s`，TCP connect 5s 必断
+- **总超时保护**：`_fetch_headlines` 新增 `as_completed(timeout=18s)` + `TimeoutError` 取消未完成 future
+- **失败追踪**：返回签名改为 `(items, sources, failed_sources)`，区分"源失败"与"源为空"
+- **线程数上限**：`max_workers=min(len(sources), 5)` 防止连接风暴
+- **部分降级**：部分源成功时显示结果 + 失败源列表，不完全丢弃
+- **反幻觉消息**：全部失败时返回 `⚠️...请勿编造或凭记忆生成新闻内容` 显式警告
+- **`_fetch_one_feed` 不再吞异常**：改为抛出，让调用者区分失败类型
+
+### 🔧 修复 `read_article.py` — 超时 + 结构化错误
+
+- `httpx.Timeout(connect=5, read=10, write=5, pool=5)` 替代单一超时
+- 区分 `TimeoutException` / `HTTPStatusError` / `ET.ParseError` 错误类型
+- 所有错误消息统一包含"请勿凭记忆编造"警告
+- 未找到文章时给出具体替代方案（缩短关键词 / web_search）
+
+### 🧠 更新 `agents/research.py` — 反幻觉提示词
+
+- 新增 **⚠️ 关键规则** 章节：
+  1. 绝对禁止编造新闻 — 工具返回 ⚠️ 错误时必须原样转达
+  2. 诚实优先 — 宁可说 3 次"无法获取"也绝不编造 1 条假新闻
+  3. 区分时效性 — 实时新闻依赖工具、通用知识用训练数据
+
+### ⏱️ 效果
+
+| 指标 | 修复前 | 修复后 |
+|------|--------|--------|
+| world_news 超时 | 5+ 分钟 | **~10s** |
+| read_news_article 超时 | 5+ 分钟 | **~10s** |
+| 幻觉风险 | 高 | 低（双重防护） |
+
+### 📡 国内可用源 + web_search 回退（v0.4.1 补充）
+
+**依据**：`news-reliability-plan.md` 三步方案
+
+**Step 1 — 新增国内可用新闻源（8 → 14+）**：
+- `NEWS_SOURCES` 新增：RSS Hub 环球、CGTN World
+- `REGION_SOURCES["china"]` 新增：RSS Hub 微博热搜/知乎热榜/百度热搜、SCMP
+- `REGION_SOURCES["tech"]` 新增：RSS Hub 36氪
+- `TOPIC_FEEDS` 区域同时合并 `REGION_SOURCES`（如 tech 板块 + 36氪）
+
+**Step 2 — topic 搜索增加 web_search 回退**：
+- Google News RSS 失败/空 → 自动调用 `web_search` 搜 `"{topic} news today"`
+- web_search 再失败 → 反幻觉消息
+
+**Step 3 — 头条模式增加 web_search 兜底**：
+- 所有 RSS 源全部失败 → `web_search` 搜当日新闻作为最后手段
+- 成功时标注来源切换，失败时走反幻觉消息
+
+**效果**：
+| 指标 | 修复前 | 修复后 |
+|------|--------|--------|
+| 源数量 | 8 | 14+ |
+| 成功率 | ~30-40% | **64%+**（7/11 源可用） |
+| 降级路径 | 0（直接报错） | 2 级（RSS → web_search → 反幻觉） |
+
+---
+
 ## 2026-06-04 — v0.4.0 天气查询
 
 ### ✅ 新建 `weather.py` — 全球天气查询

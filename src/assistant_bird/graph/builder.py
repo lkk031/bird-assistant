@@ -13,21 +13,24 @@ from assistant_bird.logging_config import get_logger
 logger = get_logger(__name__)
 
 
-def build_assistant_graph(model) -> CompiledStateGraph:
-    """Build the full supervisor-based multi-agent graph (Phase 2).
+async def build_assistant_graph(model) -> CompiledStateGraph:
+    """Build the full supervisor-based multi-agent graph.
 
     Creates 4 sub-agents (general, research, file_ops, memory) and wraps them
     in a supervisor that routes user messages to the appropriate specialist.
+
+    Uses AsyncSqliteSaver for persistent checkpointing — graph state
+    survives server restarts.
 
     Args:
         model: A configured ChatDeepSeek instance.
 
     Returns:
-        A compiled LangGraph supervisor graph with in-memory checkpointer.
+        A compiled LangGraph supervisor graph with SQLite checkpointer.
     """
     logger.info("build_assistant_graph: creating sub-agents")
 
-    # Create all sub-agents
+    # Create all sub-agents (sync)
     sub_agents = [
         create_general_agent(model),
         create_research_agent(model),
@@ -35,8 +38,8 @@ def build_assistant_graph(model) -> CompiledStateGraph:
         create_memory_agent(model),
     ]
 
-    # Create in-memory checkpointer (swap to SqliteSaver for persistence)
-    checkpointer = create_checkpointer()
+    # Create persistent async SQLite checkpointer
+    checkpointer = await create_checkpointer()
 
     # Assemble supervisor graph
     supervisor = create_supervisor_agent(

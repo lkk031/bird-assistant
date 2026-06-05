@@ -21,7 +21,8 @@ from assistant_bird.logging_config import get_logger
 
 logger = get_logger(__name__)
 
-TIMEOUT = 15.0
+# Fine-grained timeout to prevent hanging on unresponsive servers
+HTTP_TIMEOUT = httpx.Timeout(connect=5.0, read=10.0, write=5.0, pool=5.0)
 USER_AGENT = (
     "Mozilla/5.0 (compatible; AssistantBird/0.1; +https://github.com/lkk031/bird-assistant)"
 )
@@ -75,17 +76,39 @@ def read_news_article(title: str) -> str:
     logger.info("read_news_article: searching", query=query[:80])
 
     try:
-        with httpx.Client(timeout=TIMEOUT, follow_redirects=True) as client:
+        with httpx.Client(timeout=HTTP_TIMEOUT, follow_redirects=True) as client:
             response = client.get(url, headers={"User-Agent": USER_AGENT})
             response.raise_for_status()
+    except httpx.TimeoutException:
+        return (
+            "⚠️ 搜索文章超时（新闻源响应过慢）。\n\n"
+            "请勿凭记忆编造文章内容。建议：\n"
+            "1) 稍后重试\n"
+            "2) 使用 web_search 搜索文章标题"
+        )
+    except httpx.HTTPStatusError as e:
+        logger.warning(
+            "read_news_article: HTTP error",
+            status=e.response.status_code,
+        )
+        return (
+            f"⚠️ 新闻源返回 HTTP {e.response.status_code}，暂时无法检索文章。\n\n"
+            f"请勿凭记忆编造文章内容。建议使用 web_search 搜索标题。"
+        )
     except Exception as e:
         logger.error("read_news_article: search failed", error=str(e)[:80])
-        return f"搜索文章时出错: {str(e)[:100]}"
+        return (
+            f"⚠️ 搜索文章时网络出错: {str(e)[:100]}\n\n"
+            f"请勿凭记忆编造文章内容。使用 web_search 搜索标题可能更可靠。"
+        )
 
     try:
         root = ET.fromstring(response.text)
     except ET.ParseError:
-        return "无法解析搜索结果，请稍后重试。"
+        return (
+            "⚠️ 新闻源返回格式异常（非 RSS/XML），搜索功能可能被限流。\n\n"
+            "请勿凭记忆编造文章内容。建议使用 web_search 代替。"
+        )
 
     # Find best matching item
     items = []
@@ -119,9 +142,11 @@ def read_news_article(title: str) -> str:
 
     if not items:
         return (
-            f"未找到与「{title[:60]}...」匹配的文章。\n\n"
-            f"建议：1) 尝试缩短标题关键词重试\n"
-            f"      2) 用 web_search 搜索完整标题"
+            f"⚠️ 未找到与「{title[:80]}」匹配的文章。\n\n"
+            f"请勿凭记忆编造内容。建议：\n"
+            f"1) 用更短的关键词重试（2-3 个核心词）\n"
+            f"2) 使用 web_search 搜索完整标题\n"
+            f"3) 告知用户当前无法获取该文章"
         )
 
     # Return top 3 matches (different sources often cover the same story)

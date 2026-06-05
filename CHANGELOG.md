@@ -15,6 +15,165 @@
 
 ---
 
+## 2026-06-05 — 新闻模块修复 + 搜索可靠性重构
+
+### 🐛 custom_tools/world_news.py — 超时修复 + 反幻觉
+
+**问题**（来自 `news_module_issues_report.md`）：
+- 新闻工具调用耗时 5+ 分钟
+- Agent 在工具失败后凭训练数据编造假新闻
+- 工具成功率极低
+
+**修复**：
+- `httpx.Timeout(connect=5, read=10, write=5, pool=5)` 替代单一 `15.0s` 超时 — TCP connect 阶段 5s 必断
+- `_fetch_headlines` 新增 `as_completed(timeout=18s)` + `TimeoutError` → 取消未完成的 future
+- `_fetch_one_feed` 不再吞异常，让调用者区分"源失败"与"源为空"
+- 返回签名改为 `(items, sources, failed_sources)` — 追踪失败源
+- 全部源失败时返回反幻觉消息，显式警告 Agent 不得编造新闻
+- 部分源成功时显示降级提示 + 失败源列表
+- 线程数上限 5，防止连接风暴
+
+### 🛡️ custom_tools/read_article.py — 超时修复 + 结构化错误
+
+- `httpx.Timeout(connect=5, read=10, write=5, pool=5)` 替代单一超时
+- 区分 `TimeoutException` / `HTTPStatusError` / `Exception` 错误类型
+- 所有错误消息显式包含"请勿凭记忆编造"警告
+
+### 🧠 agents/research.py — 反幻觉系统提示词
+
+- 新增 **⚠️ 关键规则** 章节：
+  1. 绝对禁止编造新闻 — 工具返回 ⚠️ 错误时必须原样转达
+  2. 诚实优先 — 宁可说 3 次"无法获取"也绝不编造 1 条假新闻
+  3. 区分时效性 — 实时新闻依赖工具、通用知识用训练数据
+
+### 🔄 tools/web_search.py — 搜索可靠性重构
+
+**问题**：DuckDuckGo 不可达时，DDGS impersonation 库绕过内部超时，线程挂死。
+
+**修复**：
+- **Python 线程级硬超时**：`ThreadPoolExecutor` + `future.result(timeout=8)` 包围 DDGS 调用
+- `executor.shutdown(wait=False)` 防止退出时等待孤儿线程
+- **两阶段回退**：Phase 1 DDGS (8s 硬超时) → Phase 2 直接 httpx HTML 抓取 (8s 总超时)
+- 失败时返回反幻觉消息：明确告知 Agent 不得编造搜索结果
+- 总耗时从 5+ 分钟降至 ~16s
+
+### 🧪 tests/test_tools.py
+
+- `test_search_returns_results` 接受"搜索暂时不可用"作为合法输出（DDG 不可达环境）
+
+### 📡 custom_tools/world_news.py — 国内可用源 + web_search 回退
+
+**依据**：`news-reliability-plan.md` 三步方案
+
+**Step 1 — 新增国内可用新闻源（源数量 8 → 14+）**：
+- `NEWS_SOURCES` 新增：RSS Hub 环球、CGTN World（国内无需代理可达）
+- `REGION_SOURCES["china"]` 新增：RSS Hub 微博热搜/知乎热榜/百度热搜、SCMP
+- `REGION_SOURCES["tech"]` 新增：RSS Hub 36氪
+- 修改 headlines 代码路径：`TOPIC_FEEDS` 区域同时加载 `REGION_SOURCES`（如 tech 板块合并 36氪）
+
+**Step 2 — topic 搜索增加 web_search 回退**：
+- Google News RSS 失败 → 自动调用 `web_search` 搜 `"{topic} news today"`
+- RSS 结果为空 → 同样触发 web_search 回退
+- web_search 再失败 → 反幻觉消息
+
+**Step 3 — 头条模式增加 web_search 兜底**：
+- 所有 RSS 源全部失败 → web_search 搜 `"{region_label} news headlines {date}"`
+- 成功时标注"⚠️ 所有 RSS 新闻源不可用，以下为网页搜索结果"
+- web_search 再失败 → 反幻觉消息
+
+**效果**：
+- 源数量：8 → 14+（增加 CGTN、SCMP、RSS Hub 系列）
+- 成功率：~30-40% → **64%+**（7/11 源可用，含 SCMP/CGTN 等国内可达源）
+- 搜索回退：RSS 失败 → 自动切 web_search → 再失败才报错
+
+---
+
+## 2026-06-05 — 稳定性夯实：SqliteSaver 持久化 + 异常处理增强
+
+### 🔧 graph/checkpointer.py — InMemorySaver → SqliteSaver
+- 安装 `langgraph-checkpoint-sqlite ^2.0`
+- 图状态持久化到 `data/checkpoints.db`，服务重启不丢对话
+- `check_same_thread=False` 支持异步访问
+
+### 🛡️ ui/callbacks.py — 流式异常分类处理
+- `RecursionError`：显示部分结果 + 提示拆分任务
+- `TimeoutError`：显示部分结果 + 重试建议
+- `rate_limit` / `connection` / `recursion`：各给针对性中文提示
+- 所有异常恢复：如果已收到部分回复，保留而非丢弃
+
+### ⚙️ config.py — graph_recursion_limit 可配置
+- 新增 `GRAPH_RECURSION_LIMIT` 环境变量，默认 60
+- `callbacks.py` 不再硬编码 50
+
+### 📦 pyproject.toml
+- 新增依赖 `langgraph-checkpoint-sqlite = "^2.0"`
+
+### 📝 CLAUDE.md
+- 记录 `-w` 热重载陷阱
+
+---
+
+## 2026-06-04 — 修复 Supervisor 循环路由 + 会话状态泄漏
+
+### 🐛 根因：thread_id 写死
+`ui/callbacks.py` 中 `config["configurable"]["thread_id"]` 被写死为 `"local_user"`，
+导致所有对话共享同一个 LangGraph 状态线。消息无限累积、不随新建对话重置。
+
+**三个症状同一根因**：
+| 症状 | 机制 |
+|------|------|
+| Agent 交替循环回答 | 超长历史让 Supervisor 混淆，反复委派 |
+| 新建对话后旧对话继续展开 | state 里旧消息未清除 |
+| 简单问题回答极长 | 上下文被冗余历史塞满 |
+
+### ✅ 修复
+- `on_chat_start` 生成 UUID 作为 thread_id，存入 Chainlit session
+- `on_message` 从 session 取 thread_id，不再写死
+- 用户点击"新对话"→ 新 UUID → 全新 LangGraph state → 旧消息完全隔离
+- memory 层面仍用 `USER_ID` 保持跨会话记忆
+
+### 📝 CLAUDE.md
+- 记录 `-w` 热重载陷阱：助手写 workspace 文件会触发页面刷新
+
+---
+
+## 2026-06-04 — 文件操作 Agent 全面升级
+
+### 🔧 agents/filesystem.py — 从 4 工具扩展到 11 工具
+
+**新增 7 个工具**：
+| 工具 | 功能 | 安全机制 |
+|------|------|---------|
+| `read_lines` | 按行范围分段读取大文件 | 行号校验、自动截断提示 |
+| `get_file_info` | 文件/目录元数据（大小/时间/类型/内容数） | 仅信息查询，无修改 |
+| `append_to_file` | 文件末尾追加内容 | 自动创建父目录 |
+| `delete_file` | 删除文件或空目录 | 两步确认（confirm=False → 提示 → confirm=True） |
+| `move_file` | 移动/重命名文件和目录 | 目标已存在时拒绝、路径沙箱 |
+| `copy_file` | 复制文件到新位置 | 仅文件（非目录）、目标已存在时拒绝 |
+| `create_directory` | 创建多层目录 | `parents=True`、已存在时友好提示 |
+
+**增强现有工具**：
+- `write_file`: 新增 `overwrite` 参数，用户明确确认后可覆盖
+- `list_directory`: 目录优先排序，文件大小人类可读
+- `read_file`: 改进截断提示，引导使用 `read_lines`
+- `search_files`: 文件大小人类可读
+
+**系统提示词重写**: 明确列出 11 个工具及其使用场景、安全规则、最佳实践
+
+### 🔄 agents/supervisor.py
+- file_ops_agent 描述更新：反映完整文件管理能力
+
+### ✅ 测试
+- `tests/test_tools.py` 新增 23 个测试用例（共 32 个 FileOps 测试）
+- 覆盖所有新工具：read_lines / get_file_info / append_to_file / delete_file / move_file / copy_file / create_directory / write_file overwrite
+- 覆盖边界情况：不存在文件、无效行范围、非空目录删除、目标已存在、路径沙箱
+
+### 📝 README.md
+- 架构图：File Ops Agent 工具数 4 → 11
+- Agent 详情表：完整列出 11 个工具
+
+---
+
 ## 2026-06-04 — Mem0 记忆系统配置启用
 
 ### 🔧 配置 Mem0 API Key

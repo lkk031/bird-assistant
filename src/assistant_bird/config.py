@@ -38,6 +38,9 @@ class Settings(BaseSettings):
     llm_temperature: float = 0.7
     llm_max_tokens: int = 4096
 
+    # Graph execution
+    graph_recursion_limit: int = 60
+
 
 @lru_cache
 def get_settings() -> Settings:

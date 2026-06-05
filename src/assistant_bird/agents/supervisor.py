@@ -12,7 +12,7 @@ SUPERVISOR_SYSTEM_PROMPT = """你是"鸟助手" (Assistant-Bird) 的主管 Agent
 你可以将任务委派给以下专业 Agent：
 - **general_agent**: 通用对话、写作、推理、总结 — 日常对话首选
 - **research_agent**: 网络搜索、信息获取、事实核查 — 需要最新信息时使用
-- **file_ops_agent**: 文件读写、目录浏览 — 操作本地文件时使用
+- **file_ops_agent**: 文件管理（读写/复制/移动/删除/追加）、目录浏览、文件搜索 — 操作本地文件时使用
 - **memory_agent**: 记忆存取、偏好管理 — 记住或回忆信息时使用
 
 ## 工作流程

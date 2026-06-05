@@ -17,8 +17,13 @@ class TestWebSearch:
         result = web_search.invoke({"query": "Python programming", "num_results": 3})
         assert isinstance(result, str)
         assert len(result) > 0
-        # Should have titles or results
-        assert "Python" in result or "Search results for" in result or "No results" in result
+        # Should have titles, results, or a clear error message when DDG is down
+        assert (
+            "Python" in result
+            or "Search results for" in result
+            or "No results" in result
+            or "搜索暂时不可用" in result
+        )
 
     def test_search_respects_max_results(self):
         from assistant_bird.tools.web_search import web_search
@@ -139,6 +144,224 @@ class TestFileOps:
 
         result = read_file.invoke({"path_str": "../etc/passwd"})
         assert "Access denied" in result
+
+    # --- read_lines ---
+
+    def test_read_lines_basic(self, workspace_dir):
+        from assistant_bird.agents.filesystem import read_lines
+
+        test_file = workspace_dir / "lines.txt"
+        test_file.write_text("line1\nline2\nline3\nline4\nline5")
+
+        result = read_lines.invoke({"path_str": "lines.txt", "start_line": 2, "end_line": 4})
+        assert "line2" in result
+        assert "line3" in result
+        assert "line4" in result
+        assert "line1" not in result
+        assert "line5" not in result
+
+    def test_read_lines_default_range(self, workspace_dir):
+        from assistant_bird.agents.filesystem import read_lines
+
+        test_file = workspace_dir / "lines.txt"
+        test_file.write_text("\n".join(str(i) for i in range(1, 101)))
+
+        result = read_lines.invoke({"path_str": "lines.txt"})
+        assert "Lines 1-50 of 100" in result
+
+    def test_read_lines_invalid_range(self, workspace_dir):
+        from assistant_bird.agents.filesystem import read_lines
+
+        (workspace_dir / "lines.txt").write_text("test")
+        result = read_lines.invoke({"path_str": "lines.txt", "start_line": 5, "end_line": 1})
+        assert "Error" in result
+
+    # --- get_file_info ---
+
+    def test_get_file_info(self, workspace_dir):
+        from assistant_bird.agents.filesystem import get_file_info
+
+        test_file = workspace_dir / "info.txt"
+        test_file.write_text("hello world")
+
+        result = get_file_info.invoke({"path_str": "info.txt"})
+        assert "📄 File" in result or "File" in result
+        assert "info.txt" in result
+        assert "11 bytes" in result
+
+    def test_get_file_info_directory(self, workspace_dir):
+        from assistant_bird.agents.filesystem import get_file_info
+
+        (workspace_dir / "sub").mkdir()
+
+        result = get_file_info.invoke({"path_str": "sub"})
+        assert "Directory" in result or "sub" in result
+
+    def test_get_file_info_not_found(self):
+        from assistant_bird.agents.filesystem import get_file_info
+
+        result = get_file_info.invoke({"path_str": "nonexistent.xyz"})
+        assert "not found" in result
+
+    # --- append_to_file ---
+
+    def test_append_to_existing(self, workspace_dir):
+        from assistant_bird.agents.filesystem import append_to_file
+
+        (workspace_dir / "log.txt").write_text("line1\n")
+
+        result = append_to_file.invoke({"path_str": "log.txt", "content": "line2\n"})
+        assert "已追加" in result or "appended" in result.lower()
+        assert (workspace_dir / "log.txt").read_text() == "line1\nline2\n"
+
+    def test_append_creates_new_file(self, workspace_dir):
+        from assistant_bird.agents.filesystem import append_to_file
+
+        result = append_to_file.invoke({"path_str": "new_log.txt", "content": "first line\n"})
+        assert "已追加" in result or "appended" in result.lower()
+        assert (workspace_dir / "new_log.txt").exists()
+        assert (workspace_dir / "new_log.txt").read_text() == "first line\n"
+
+    # --- delete_file ---
+
+    def test_delete_file_needs_confirmation(self, workspace_dir):
+        from assistant_bird.agents.filesystem import delete_file
+
+        (workspace_dir / "to_delete.txt").write_text("delete me")
+
+        result = delete_file.invoke({"path_str": "to_delete.txt"})
+        assert "确认" in result or "confirm" in result.lower()
+        assert (workspace_dir / "to_delete.txt").exists()  # Still exists
+
+    def test_delete_file_confirmed(self, workspace_dir):
+        from assistant_bird.agents.filesystem import delete_file
+
+        (workspace_dir / "to_delete.txt").write_text("delete me")
+
+        result = delete_file.invoke({"path_str": "to_delete.txt", "confirm": True})
+        assert "已删除" in result or "deleted" in result.lower()
+        assert not (workspace_dir / "to_delete.txt").exists()
+
+    def test_delete_nonexistent(self):
+        from assistant_bird.agents.filesystem import delete_file
+
+        result = delete_file.invoke({"path_str": "nonexistent.txt", "confirm": True})
+        assert "not found" in result
+
+    def test_delete_non_empty_directory(self, workspace_dir):
+        from assistant_bird.agents.filesystem import delete_file
+
+        sub = workspace_dir / "nonempty"
+        sub.mkdir()
+        (sub / "file.txt").write_text("data")
+
+        result = delete_file.invoke({"path_str": "nonempty", "confirm": True})
+        assert "Error" in result or "not empty" in result
+
+    # --- move_file ---
+
+    def test_move_file_rename(self, workspace_dir):
+        from assistant_bird.agents.filesystem import move_file
+
+        (workspace_dir / "old_name.txt").write_text("content")
+
+        result = move_file.invoke({"source": "old_name.txt", "destination": "new_name.txt"})
+        assert "完成" in result or "moved" in result.lower()
+        assert not (workspace_dir / "old_name.txt").exists()
+        assert (workspace_dir / "new_name.txt").exists()
+        assert (workspace_dir / "new_name.txt").read_text() == "content"
+
+    def test_move_file_to_subdir(self, workspace_dir):
+        from assistant_bird.agents.filesystem import move_file
+
+        (workspace_dir / "sub").mkdir()
+        (workspace_dir / "move_me.txt").write_text("moving")
+
+        result = move_file.invoke({"source": "move_me.txt", "destination": "sub/move_me.txt"})
+        assert "完成" in result or "moved" in result.lower()
+        assert not (workspace_dir / "move_me.txt").exists()
+        assert (workspace_dir / "sub" / "move_me.txt").exists()
+
+    def test_move_file_destination_exists(self, workspace_dir):
+        from assistant_bird.agents.filesystem import move_file
+
+        (workspace_dir / "src.txt").write_text("src")
+        (workspace_dir / "dst.txt").write_text("dst")
+
+        result = move_file.invoke({"source": "src.txt", "destination": "dst.txt"})
+        assert "已存在" in result or "exists" in result.lower()
+
+    def test_move_file_source_not_found(self):
+        from assistant_bird.agents.filesystem import move_file
+
+        result = move_file.invoke({"source": "nope.txt", "destination": "somewhere.txt"})
+        assert "not found" in result
+
+    # --- copy_file ---
+
+    def test_copy_file(self, workspace_dir):
+        from assistant_bird.agents.filesystem import copy_file
+
+        (workspace_dir / "original.txt").write_text("original content")
+
+        result = copy_file.invoke({"source": "original.txt", "destination": "copy.txt"})
+        assert "复制" in result or "copied" in result.lower()
+        assert (workspace_dir / "original.txt").exists()
+        assert (workspace_dir / "copy.txt").exists()
+        assert (workspace_dir / "copy.txt").read_text() == "original content"
+
+    def test_copy_file_source_not_found(self):
+        from assistant_bird.agents.filesystem import copy_file
+
+        result = copy_file.invoke({"source": "nope.txt", "destination": "anywhere.txt"})
+        assert "not found" in result
+
+    def test_copy_file_destination_exists(self, workspace_dir):
+        from assistant_bird.agents.filesystem import copy_file
+
+        (workspace_dir / "src.txt").write_text("src")
+        (workspace_dir / "dst.txt").write_text("dst")
+
+        result = copy_file.invoke({"source": "src.txt", "destination": "dst.txt"})
+        assert "已存在" in result or "exists" in result.lower()
+
+    # --- create_directory ---
+
+    def test_create_directory(self, workspace_dir):
+        from assistant_bird.agents.filesystem import create_directory
+
+        result = create_directory.invoke({"path_str": "new_dir"})
+        assert "已创建" in result or "created" in result.lower()
+        assert (workspace_dir / "new_dir").is_dir()
+
+    def test_create_directory_nested(self, workspace_dir):
+        from assistant_bird.agents.filesystem import create_directory
+
+        result = create_directory.invoke({"path_str": "a/b/c"})
+        assert "已创建" in result or "created" in result.lower()
+        assert (workspace_dir / "a" / "b" / "c").is_dir()
+
+    def test_create_directory_already_exists(self, workspace_dir):
+        from assistant_bird.agents.filesystem import create_directory
+
+        (workspace_dir / "existing_dir").mkdir()
+        result = create_directory.invoke({"path_str": "existing_dir"})
+        assert "已存在" in result or "exists" in result.lower()
+
+    # --- write_file overwrite ---
+
+    def test_write_file_overwrite(self, workspace_dir):
+        from assistant_bird.agents.filesystem import write_file
+
+        (workspace_dir / "overwrite.txt").write_text("old")
+
+        result = write_file.invoke({
+            "path_str": "overwrite.txt",
+            "content": "new",
+            "overwrite": True,
+        })
+        assert "覆盖" in result or "成功" in result or "written" in result.lower()
+        assert (workspace_dir / "overwrite.txt").read_text() == "new"
 
 
 class TestToolRegistry:
