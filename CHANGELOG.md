@@ -15,6 +15,69 @@
 
 ---
 
+## 2026-06-05 — 会话隔离 + 对话历史浏览器 + 性能优化
+
+### ✨ ui/callbacks.py — 会话隔离
+
+**问题**：`thread_id` 用硬编码 `USER_ID = "local_user"` 作为 key，所有对话共享同一个 LangGraph thread，点击"新对话"后历史消息依然存在。
+**修复**：改用 `cl.context.session.id` 作为 key —— 新对话生成新 session ID → 新 thread_id；页面刷新保留 cookie → 复用 thread_id。
+
+### ✨ ui/callbacks.py — 对话历史浏览器
+
+**新增功能**：
+- `data/conversations.json` 持久化对话元数据（标题、时间戳、消息数）
+- 设置面板下拉菜单（⚙️ → 📋 对话历史）浏览和切换历史对话
+- 选择对话后**即时重放**历史消息，无需刷新页面
+- 延迟注册：仅在首次发消息时创建对话记录，空白对话不污染列表
+- 智能标题提取 `_extract_title()`：去除"请帮我""麻烦"等前缀词，自然断句截断
+
+### ⚡ memory/memory_manager.py — 记忆查询并行化
+
+**之前**：Mem0 API → Chroma → SQLite 串行执行，总延迟 = 200ms + 50ms + 10ms ≈ 260ms。
+**之后**：`ThreadPoolExecutor(max_workers=3)` 三路并行，总延迟 = max(200ms, 50ms, 10ms) ≈ 200ms。每层独立异常隔离。
+
+### ⚡ ui/callbacks.py — 对话元数据内存缓存
+
+**之前**：每条消息触发 2 次完整 JSON 文件读写（30 轮对话 = 60 次 I/O）。
+**之后**：`_conversations_cache` 内存缓存，只在变更时刷盘，减少 98% 磁盘 I/O。
+
+### ✨ ui/callbacks.py — 工具执行进度提示
+
+**之前**：工具执行期间（新闻搜索 5-15s）界面空白，用户以为卡死。
+**之后**：消息流首个 token 为 `💭` 思考指示符，工具调用时持续显示，让用户知道正在处理。
+
+### 🔧 graph/checkpointer.py — AsyncSqliteSaver 持久化
+
+- 从 `InMemorySaver` 升级为 `AsyncSqliteSaver`（`langgraph-checkpoint-sqlite`）
+- aiosqlite `is_alive()` 兼容性补丁（Anaconda Python 3.13 缺少该方法）
+- 模块级 `_conn` 引用保持连接生命周期
+
+### 🔧 config.py — 可配置递归限制
+
+新增 `graph_recursion_limit: int = 60`，替代硬编码值。
+
+### 🔧 ui/callbacks.py — 中文错误分类处理
+
+`RecursionError` / `TimeoutError` / 速率限制 / 连接异常 → 各自独立的中文用户提示。
+
+### 🔧 agents/filesystem.py — 文件操作扩展
+
+从 4 工具扩展到 11 工具：`read_file`, `read_lines`, `list_directory`, `search_files`, `get_file_info`, `write_file`, `append_to_file`, `delete_file`, `move_file`, `copy_file`, `create_directory`。全部路径沙箱化，写/删操作需确认。
+
+### 🔧 tools/web_search.py — 双阶段 DuckDuckGo 搜索
+
+- Phase 1: `duckduckgo_search` 库（DDGS），8s 硬超时
+- Phase 2: httpx 直接抓取 `html.duckduckgo.com`，不同代码路径
+- 两阶段均失败时反幻觉提示，禁止模型编造结果
+
+### 🔧 custom_tools/world_news.py — 多源 RSS 聚合优化
+
+- 细粒度 httpx 超时（connect=5s, read=10s）
+- `ThreadPoolExecutor` + `as_completed(timeout=18s)` 并行抓取
+- 失败源追踪 + 反幻觉信息注入
+
+---
+
 ## 2026-06-05 — 新闻模块修复 + 搜索可靠性重构
 
 ### 🐛 custom_tools/world_news.py — 超时修复 + 反幻觉
