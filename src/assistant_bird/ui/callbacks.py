@@ -55,19 +55,31 @@ def _save_thread_map(data: dict[str, str]) -> None:
 
 CONVERSATIONS_FILE = Path("data/conversations.json")
 
+# In-memory cache to avoid disk I/O on every message.
+# Cache is warmed on first load and flushed to disk on every save
+# (which only happens when metadata actually changes).
+_conversations_cache: dict[str, dict] | None = None
+
 
 def _load_conversations() -> dict[str, dict]:
-    """Load conversation index: {thread_id: {title, created_at, ...}}"""
+    """Load conversation index from cache or disk."""
+    global _conversations_cache
+    if _conversations_cache is not None:
+        return _conversations_cache
     try:
         if CONVERSATIONS_FILE.exists():
-            return json.loads(CONVERSATIONS_FILE.read_text())
+            _conversations_cache = json.loads(CONVERSATIONS_FILE.read_text())
+            return _conversations_cache
     except Exception:
         pass
-    return {}
+    _conversations_cache = {}
+    return _conversations_cache
 
 
 def _save_conversations(data: dict[str, dict]) -> None:
-    """Save conversation index to disk."""
+    """Save conversation index to disk and update cache."""
+    global _conversations_cache
+    _conversations_cache = data
     CONVERSATIONS_FILE.parent.mkdir(parents=True, exist_ok=True)
     CONVERSATIONS_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2))
 
@@ -365,6 +377,7 @@ async def on_message(message: cl.Message) -> None:
     response_msg = cl.Message(content="")
     full_response = ""
     current_agent = "supervisor"
+    thinking_sent = False
 
     logger.info(
         "on_message: invoking graph",
@@ -377,6 +390,12 @@ async def on_message(message: cl.Message) -> None:
             kind = event.get("event", "")
             metadata = event.get("metadata", {})
             agent_name = metadata.get("langgraph_node", "")
+
+            # Send a "thinking..." indicator on the very first event so the
+            # user knows something is happening during tool execution.
+            if not thinking_sent:
+                thinking_sent = True
+                await response_msg.stream_token("💭 ")
 
             # Detect agent switches
             if agent_name and agent_name != current_agent and agent_name in AGENT_DISPLAY:
