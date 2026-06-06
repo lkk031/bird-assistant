@@ -77,7 +77,7 @@ async def read_news_article(title: str) -> str:
 
     try:
         async with httpx.AsyncClient(timeout=HTTP_TIMEOUT, follow_redirects=True) as client:
-            response = client.get(url, headers={"User-Agent": USER_AGENT})
+            response = await client.get(url, headers={"User-Agent": USER_AGENT})
             response.raise_for_status()
     except httpx.TimeoutException:
         return (

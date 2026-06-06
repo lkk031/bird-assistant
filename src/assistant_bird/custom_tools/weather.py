@@ -99,7 +99,7 @@ async def get_weather(city: str, forecast_days: int = 1) -> str:
     # Step 1: Geocoding — city name → coordinates
     try:
         async with httpx.AsyncClient(timeout=TIMEOUT) as client:
-            geo_resp = client.get(
+            geo_resp = await client.get(
                 GEOCODING_URL,
                 params={
                     "name": city,
@@ -149,7 +149,7 @@ async def get_weather(city: str, forecast_days: int = 1) -> str:
     )
     try:
         async with httpx.AsyncClient(timeout=TIMEOUT) as client:
-            weather_resp = client.get(
+            weather_resp = await client.get(
                 WEATHER_URL,
                 params={
                     "latitude": lat,

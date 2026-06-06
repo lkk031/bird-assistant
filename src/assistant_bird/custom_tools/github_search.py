@@ -59,7 +59,7 @@ async def _search_github(
     url = f"{BASE_URL}{endpoint}"
 
     async with httpx.AsyncClient(timeout=TIMEOUT, follow_redirects=True) as client:
-        resp = client.get(
+        resp = await client.get(
             url,
             params={"q": query, "per_page": max_results},
             headers={

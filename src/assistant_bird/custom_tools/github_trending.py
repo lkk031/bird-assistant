@@ -83,7 +83,7 @@ async def github_trending(
 
     try:
         async with httpx.AsyncClient(timeout=TIMEOUT, follow_redirects=True) as client:
-            response = client.get(url, headers={"User-Agent": USER_AGENT})
+            response = await client.get(url, headers={"User-Agent": USER_AGENT})
             response.raise_for_status()
     except httpx.TimeoutException:
         return "Error: GitHub trending request timed out. Please try again."

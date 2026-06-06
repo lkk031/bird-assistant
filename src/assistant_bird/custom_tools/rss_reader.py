@@ -33,7 +33,7 @@ async def _fetch_feed_content(url: str) -> str:
     # Attempt 1: standard SSL
     try:
         async with httpx.AsyncClient(**client_kwargs, verify=True) as client:  # type: ignore[arg-type]
-            resp = client.get(url)
+            resp = await client.get(url)
             resp.raise_for_status()
             return resp.text
     except Exception:
@@ -41,7 +41,7 @@ async def _fetch_feed_content(url: str) -> str:
 
     # Attempt 2: relaxed SSL
     async with httpx.AsyncClient(**client_kwargs, verify=False) as client:  # type: ignore[arg-type]
-        resp = client.get(url)
+        resp = await client.get(url)
         resp.raise_for_status()
         return resp.text
 
