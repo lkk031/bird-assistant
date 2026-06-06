@@ -449,6 +449,7 @@ async def on_chat_start() -> None:
             ),
             actions=[cl.Action(
                 name="export_current_conversation",
+                payload={"thread_id": thread_id},
                 label="📥 导出对话",
                 description="导出当前对话为 Markdown 文件",
             )],
