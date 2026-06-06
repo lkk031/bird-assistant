@@ -15,6 +15,25 @@
 
 ---
 
+## 2026-06-06 — 视频搜索工具集成
+
+### ✨ custom_tools/video_search.py — 新增
+
+基于 yt-dlp 的视频搜索工具，覆盖 YouTube 和 B站：
+- YouTube: `extract_flat=True` 快速获取标题/时长/播放量/作者/简介
+- B站: 完整提取获取标题和链接，通过浏览器 UA 头绕过 412 反爬
+- auto 模式同时搜索两个平台
+- 详细变更见 `custom_tools/CHANGELOG.md`
+
+### 🔧 tools/registry.py — 注册 video_search
+
+- `_tools` 字典新增 `"video_search": video_search`
+
+### 🔧 agents/research.py — 分配 + 提示词更新
+
+- `get_tools([...])` 列表加入 `"video_search"`
+- 系统提示词新增 video_search 使用说明和触发场景
+
 ## 2026-06-05 — 会话隔离 + 对话历史浏览器 + 性能优化
 
 ### ✨ ui/callbacks.py — 会话隔离
