@@ -8,7 +8,6 @@ Accuracy is within ±15% of DeepSeek's actual tokenizer, which is
 sufficient for budget decisions (summarize / truncate / warn).
 """
 
-import re
 
 # Unicode ranges for CJK characters
 _CJK_RANGES = [

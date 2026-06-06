@@ -1,5 +1,6 @@
 """Tests for tool implementations."""
 
+import pytest
 
 
 class TestWebSearch:
@@ -10,11 +11,12 @@ class TestWebSearch:
         assert web_search is not None
         assert hasattr(web_search, "invoke")
 
-    def test_search_returns_results(self):
+    @pytest.mark.asyncio
+    async def test_search_returns_results(self):
         """Integration test: real DuckDuckGo search."""
         from assistant_bird.tools.web_search import web_search
 
-        result = web_search.invoke({"query": "Python programming", "num_results": 3})
+        result = await web_search.ainvoke({"query": "Python programming", "num_results": 3})
         assert isinstance(result, str)
         assert len(result) > 0
         # Should have titles, results, or a clear error message when DDG is down
@@ -25,10 +27,11 @@ class TestWebSearch:
             or "搜索暂时不可用" in result
         )
 
-    def test_search_respects_max_results(self):
+    @pytest.mark.asyncio
+    async def test_search_respects_max_results(self):
         from assistant_bird.tools.web_search import web_search
 
-        result = web_search.invoke({"query": "test", "num_results": 20})
+        result = await web_search.ainvoke({"query": "test", "num_results": 20})
         # Should be capped at 10
         assert isinstance(result, str)
 
@@ -41,16 +44,18 @@ class TestWebScraper:
         assert scrape_webpage is not None
         assert search_and_scrape is not None
 
-    def test_invalid_url_rejected(self):
+    @pytest.mark.asyncio
+    async def test_invalid_url_rejected(self):
         from assistant_bird.tools.web_scraper import scrape_webpage
 
-        result = scrape_webpage.invoke({"url": "not-a-valid-url"})
+        result = await scrape_webpage.ainvoke({"url": "not-a-valid-url"})
         assert "Error" in result
 
-    def test_nonexistent_domain(self):
+    @pytest.mark.asyncio
+    async def test_nonexistent_domain(self):
         from assistant_bird.tools.web_scraper import scrape_webpage
 
-        result = scrape_webpage.invoke({"url": "https://this-domain-does-not-exist-12345.com"})
+        result = await scrape_webpage.ainvoke({"url": "https://this-domain-does-not-exist-12345.com"})
         assert "Error" in result
 
 

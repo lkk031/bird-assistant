@@ -18,7 +18,7 @@ USER_AGENT = (
 )
 MAX_ENTRIES = 20
 
-def _fetch_feed_content(url: str) -> str:
+async def _fetch_feed_content(url: str) -> str:
     """Fetch feed XML via httpx with SSL fallback.
 
     Tries standard SSL first, then falls back to verify=False (many hosts
@@ -32,7 +32,7 @@ def _fetch_feed_content(url: str) -> str:
 
     # Attempt 1: standard SSL
     try:
-        with httpx.Client(**client_kwargs, verify=True) as client:  # type: ignore[arg-type]
+        async with httpx.AsyncClient(**client_kwargs, verify=True) as client:  # type: ignore[arg-type]
             resp = client.get(url)
             resp.raise_for_status()
             return resp.text
@@ -40,7 +40,7 @@ def _fetch_feed_content(url: str) -> str:
         pass
 
     # Attempt 2: relaxed SSL
-    with httpx.Client(**client_kwargs, verify=False) as client:  # type: ignore[arg-type]
+    async with httpx.AsyncClient(**client_kwargs, verify=False) as client:  # type: ignore[arg-type]
         resp = client.get(url)
         resp.raise_for_status()
         return resp.text
@@ -72,7 +72,7 @@ def _clean_summary(text: str, max_len: int = 200) -> str:
 
 
 @tool
-def rss_feed(url: str, limit: int = 10) -> str:
+async def rss_feed(url: str, limit: int = 10) -> str:
     """读取 RSS/Atom 订阅源，返回最新的文章列表。
 
     适用场景：订阅技术博客、播客、新闻源、学术论文等任意 RSS feed。
@@ -95,7 +95,7 @@ def rss_feed(url: str, limit: int = 10) -> str:
 
     # Fetch the feed content (with SSL fallback)
     try:
-        raw_content = _fetch_feed_content(url)
+        raw_content = await _fetch_feed_content(url)
     except httpx.TimeoutException:
         return f"❌ 读取订阅源超时（{TIMEOUT}秒）: {url}\n请稍后重试或检查 URL 是否正确。"
     except httpx.HTTPStatusError as e:

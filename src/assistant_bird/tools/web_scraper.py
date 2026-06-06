@@ -4,6 +4,7 @@ Anti-scraping protections: rotating User-Agent pool, browser-like headers,
 random delay between requests, and exponential backoff on rate limits.
 """
 
+import asyncio
 import random
 import time
 
@@ -91,7 +92,7 @@ def _extract_domain(url: str) -> str:
 
 
 @tool
-def scrape_webpage(url: str) -> str:
+async def scrape_webpage(url: str) -> str:
     """Fetch and extract text content from a web page.
 
     Strips out scripts, styles, navigation elements and returns clean text.
@@ -125,17 +126,16 @@ def scrape_webpage(url: str) -> str:
                 attempt=attempt + 1,
                 wait=round(wait, 1),
             )
-            time.sleep(wait)
+            await asyncio.sleep(wait)
             # Rotate User-Agent on retry
             headers["User-Agent"] = random.choice(USER_AGENTS)
 
         try:
-            with httpx.Client(
+            async with httpx.AsyncClient(
                 timeout=TIMEOUT,
                 follow_redirects=True,
-                http2=True,
             ) as client:
-                response = client.get(url, headers=headers)
+                response = await client.get(url, headers=headers)
         except httpx.TimeoutException:
             last_error = f"Error: Request to {url} timed out after {TIMEOUT}s."
             continue
@@ -218,7 +218,7 @@ def scrape_webpage(url: str) -> str:
 
 
 @tool
-def search_and_scrape(query: str, num_results: int = 3) -> str:
+async def search_and_scrape(query: str, num_results: int = 3) -> str:
     """Search the web and scrape the top results in one step.
 
     Performs a DuckDuckGo search and automatically scrapes the top pages
@@ -235,7 +235,7 @@ def search_and_scrape(query: str, num_results: int = 3) -> str:
 
     num_results = min(max(num_results, 1), 5)
 
-    search_result = web_search.invoke({"query": query, "num_results": num_results})
+    search_result = await web_search.ainvoke({"query": query, "num_results": num_results})
     if "No results found" in search_result or "Search failed" in search_result:
         return search_result
 
@@ -253,7 +253,7 @@ def search_and_scrape(query: str, num_results: int = 3) -> str:
     parts = [search_result, "\n---\n## 📄 详细内容\n"]
     for i, url in enumerate(urls, 1):
         parts.append(f"\n### {i}. {url}")
-        scraped = scrape_webpage.invoke({"url": url})
+        scraped = await scrape_webpage.ainvoke({"url": url})
         if len(scraped) > 2000:
             scraped = scraped[:2000] + "\n...(truncated per page)"
         parts.append(scraped)

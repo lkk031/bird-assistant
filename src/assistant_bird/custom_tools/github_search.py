@@ -40,7 +40,7 @@ def _format_number(n: int) -> str:
     return str(n)
 
 
-def _search_github(
+async def _search_github(
     search_type: str,
     query: str,
     max_results: int,
@@ -58,7 +58,7 @@ def _search_github(
     endpoint = SEARCH_ENDPOINTS[search_type]
     url = f"{BASE_URL}{endpoint}"
 
-    with httpx.Client(timeout=TIMEOUT, follow_redirects=True) as client:
+    async with httpx.AsyncClient(timeout=TIMEOUT, follow_redirects=True) as client:
         resp = client.get(
             url,
             params={"q": query, "per_page": max_results},
@@ -125,7 +125,7 @@ def _search_github(
 
 
 @tool
-def github_search(
+async def github_search(
     query: str,
     search_type: str = "repositories",
     max_results: int = 5,
@@ -169,7 +169,7 @@ def github_search(
     )
 
     try:
-        items = _search_github(search_type, query, max_results)
+        items = await _search_github(search_type, query, max_results)
     except httpx.TimeoutException:
         return f"❌ GitHub 搜索超时（{TIMEOUT}秒），请稍后重试。"
     except httpx.HTTPStatusError as e:

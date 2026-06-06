@@ -17,6 +17,21 @@
 
 ## 2026-06-06 — 视频搜索 + RSS + GitHub 搜索 + 对话导出集成
 
+### ⚡ HTTP 异步改造 — 全部工具切换为 httpx.AsyncClient
+
+所有网络 I/O 从同步 `httpx.Client()` → `httpx.AsyncClient()`：
+- `custom_tools/weather.py` — 2 处
+- `custom_tools/rss_reader.py` — 2 处（含 SSL 回退双路径）
+- `custom_tools/github_search.py` — 1 处
+- `custom_tools/github_trending.py` — 1 处
+- `custom_tools/world_news.py` — ThreadPoolExecutor → `asyncio.gather`
+- `custom_tools/read_article.py` — 1 处
+- `tools/web_search.py` — 2 处（含 lite 回退路径）
+- `tools/web_scraper.py` — 1 处（含 retry 循环 `asyncio.sleep`）
+
+改动影响：`@tool` 函数 → `async def`，`.invoke()` → `.ainvoke()`（内部调用同步更新）。
+world_news 的并行 RSS 抓取从线程池改为 asyncio.gather 协程并发。
+
 ### ✨ ui/callbacks.py — 对话 Markdown 导出
 
 新增 `on_export_conversation` action callback：

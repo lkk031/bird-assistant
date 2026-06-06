@@ -78,7 +78,7 @@ def _wind_degree_to_direction(degree: float) -> str:
 
 
 @tool
-def get_weather(city: str, forecast_days: int = 1) -> str:
+async def get_weather(city: str, forecast_days: int = 1) -> str:
     """查询指定城市的天气信息，包括当前天气和未来预报。
 
     通过城市名称查询实时天气数据，包括温度、体感温度、湿度、
@@ -98,7 +98,7 @@ def get_weather(city: str, forecast_days: int = 1) -> str:
 
     # Step 1: Geocoding — city name → coordinates
     try:
-        with httpx.Client(timeout=TIMEOUT) as client:
+        async with httpx.AsyncClient(timeout=TIMEOUT) as client:
             geo_resp = client.get(
                 GEOCODING_URL,
                 params={
@@ -148,7 +148,7 @@ def get_weather(city: str, forecast_days: int = 1) -> str:
         "weather_code,precipitation_probability_max"
     )
     try:
-        with httpx.Client(timeout=TIMEOUT) as client:
+        async with httpx.AsyncClient(timeout=TIMEOUT) as client:
             weather_resp = client.get(
                 WEATHER_URL,
                 params={

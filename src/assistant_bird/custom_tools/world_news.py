@@ -9,9 +9,9 @@ Topic search uses Google News RSS search (the only free searchable news API).
 All sources are free RSS feeds — no API keys, no rate limits.
 """
 
+import asyncio
 import re
 import xml.etree.ElementTree as ET
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, datetime
 
 import httpx
@@ -173,7 +173,7 @@ def _clean_html(raw: str) -> str:
     return re.sub(r"<[^>]+>", "", raw)
 
 
-def _fetch_one_feed(source: dict, max_items: int) -> list[dict]:
+async def _fetch_one_feed(source: dict, max_items: int) -> list[dict]:
     """Fetch and parse a single RSS feed.
 
     Returns list of {title, url, source_name, source_type, published}.
@@ -183,8 +183,8 @@ def _fetch_one_feed(source: dict, max_items: int) -> list[dict]:
     Raises httpx.HTTPError / TimeoutException on network failure so the
     caller can distinguish "feed unreachable" from "feed empty".
     """
-    with httpx.Client(timeout=HTTP_TIMEOUT, follow_redirects=True) as client:
-        response = client.get(
+    async with httpx.AsyncClient(timeout=HTTP_TIMEOUT, follow_redirects=True) as client:
+        response = await client.get(
             source["url"],
             headers={"User-Agent": USER_AGENT},
         )
@@ -285,7 +285,7 @@ def _deduplicate(items: list[dict]) -> list[dict]:
     return result
 
 
-def _fetch_headlines(
+async def _fetch_headlines(
     sources: list[dict], max_results: int,
 ) -> tuple[list[dict], list[str], list[str]]:
     """Fetch headlines from multiple sources in parallel with overall timeout.
@@ -295,41 +295,32 @@ def _fetch_headlines(
     - all_source_names: names of sources that returned ≥1 item
     - failed_source_names: names of sources that threw or timed out
     """
+
     all_items: list[dict] = []
     failed_sources: list[str] = []
-    max_workers = min(len(sources), 5)  # Cap threads to avoid connection storms
 
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = {executor.submit(_fetch_one_feed, src, max_results): src for src in sources}
-        try:
-            for future in as_completed(futures, timeout=FETCH_TOTAL_TIMEOUT):
-                src = futures[future]
-                try:
-                    items = future.result()  # already completed, returns instantly
-                    if items:
-                        logger.info(
-                            "world_news: source OK",
-                            source=src["name"],
-                            count=len(items),
-                        )
-                    all_items.extend(items)
-                except Exception as e:
-                    failed_sources.append(src["name"])
-                    logger.warning(
-                        "world_news: source failed",
-                        source=src["name"],
-                        error=str(e)[:80],
-                    )
-        except TimeoutError:
-            # Mark all incomplete futures as failed
-            for f, src in futures.items():
-                if not f.done():
-                    f.cancel()
-                    failed_sources.append(src["name"])
-                    logger.warning(
-                        "world_news: source timed out (global)",
-                        source=src["name"],
-                    )
+    # Run all feeds concurrently via asyncio.gather
+    tasks = [
+        asyncio.wait_for(_fetch_one_feed(src, max_results), timeout=FETCH_TOTAL_TIMEOUT)
+        for src in sources
+    ]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    for src, result in zip(sources, results):
+        if isinstance(result, Exception):
+            failed_sources.append(src["name"])
+            logger.warning(
+                "world_news: source failed",
+                source=src["name"],
+                error=str(result)[:80],
+            )
+        elif result:
+            logger.info(
+                "world_news: source OK",
+                source=src["name"],
+                count=len(result),
+            )
+            all_items.extend(result)
 
     # Track all source names BEFORE dedup
     all_source_names = list(dict.fromkeys(
@@ -352,7 +343,7 @@ def _fetch_headlines(
 
 
 @tool
-def world_news(
+async def world_news(
     topic: str = "",
     region: str = "world",
     max_results: int = 15,
@@ -409,7 +400,7 @@ def world_news(
             extra = REGION_SOURCES.get(region, [])
             sources.extend(extra)
 
-        items, all_sources, failed_sources = _fetch_headlines(sources, max_results)
+        items, all_sources, failed_sources = await _fetch_headlines(sources, max_results)
 
         if not items:
             # ALL sources failed → try web_search as last resort
@@ -421,7 +412,7 @@ def world_news(
                 from assistant_bird.tools.web_search import web_search
                 try:
                     now = datetime.now(UTC)
-                    result = web_search.invoke({
+                    result = await web_search.ainvoke({
                         "query": (
                             f"{region_label} news headlines "
                             f"{now.strftime('%Y-%m-%d')}"
@@ -495,7 +486,7 @@ def world_news(
         }
 
         try:
-            items = _fetch_one_feed(source, max_results)
+            items = await _fetch_one_feed(source, max_results)
         except Exception as e:
             logger.warning(
                 "world_news: topic search failed, falling back to web_search",

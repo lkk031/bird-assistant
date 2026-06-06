@@ -96,7 +96,7 @@ def _search_via_ddgs(query: str, num_results: int) -> list[dict] | None:
     return None
 
 
-def _search_via_html(query: str, num_results: int) -> list[dict] | None:
+async def _search_via_html(query: str, num_results: int) -> list[dict] | None:
     """Fallback: scrape DuckDuckGo HTML endpoint directly with httpx.
 
     Uses https://html.duckduckgo.com/html — the server-side rendered variant
@@ -116,8 +116,8 @@ def _search_via_html(query: str, num_results: int) -> list[dict] | None:
     }
 
     try:
-        with httpx.Client(timeout=HTTP_TIMEOUT, follow_redirects=True) as client:
-            response = client.get(url, headers=headers)
+        async with httpx.AsyncClient(timeout=HTTP_TIMEOUT, follow_redirects=True) as client:
+            response = await client.get(url, headers=headers)
             response.raise_for_status()
     except httpx.TimeoutException:
         logger.warning("web_search: HTML fallback timed out", query=query[:60])
@@ -137,10 +137,10 @@ def _search_via_html(query: str, num_results: int) -> list[dict] | None:
         # Try lite endpoint as sub-fallback
         try:
             lite_url = f"https://lite.duckduckgo.com/lite/?q={quote(query)}"
-            with httpx.Client(
+            async with httpx.AsyncClient(
                 timeout=HTTP_TIMEOUT, follow_redirects=True,
             ) as client:
-                lite_resp = client.get(lite_url, headers=headers)
+                lite_resp = await client.get(lite_url, headers=headers)
                 lite_resp.raise_for_status()
             lite_soup = BeautifulSoup(lite_resp.text, "html.parser")
             result_els = lite_soup.select("a.result-link")
@@ -203,7 +203,7 @@ def _format_results(query: str, results: list[dict]) -> str:
 
 
 @tool
-def web_search(query: str, num_results: int = 5) -> str:
+async def web_search(query: str, num_results: int = 5) -> str:
     """Search the web using DuckDuckGo and return formatted results.
 
     Uses a two-phase approach for reliability:
@@ -227,7 +227,7 @@ def web_search(query: str, num_results: int = 5) -> str:
 
     # ── Phase 2: HTML scraping fallback ──
     logger.info("web_search: DDGS failed, trying HTML fallback", query=query[:60])
-    results = _search_via_html(query, num_results)
+    results = await _search_via_html(query, num_results)
     if results:
         return _format_results(query, results)
 

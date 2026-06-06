@@ -39,7 +39,7 @@ def _parse_stars_today(text: str) -> str:
 
 
 @tool
-def github_trending(
+async def github_trending(
     language: str = "",
     since: str = "daily",
     max_results: int = 10,
@@ -82,7 +82,7 @@ def github_trending(
     logger.info("github_trending: fetching", url=url, max_results=max_results)
 
     try:
-        with httpx.Client(timeout=TIMEOUT, follow_redirects=True) as client:
+        async with httpx.AsyncClient(timeout=TIMEOUT, follow_redirects=True) as client:
             response = client.get(url, headers={"User-Agent": USER_AGENT})
             response.raise_for_status()
     except httpx.TimeoutException:

@@ -6,10 +6,9 @@ the conversation to a new LangGraph thread. The old thread is archived
 but remains accessible via the conversation history dropdown.
 """
 
-import uuid
 
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
+from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 
 from assistant_bird.config import get_settings
 from assistant_bird.logging_config import get_logger

@@ -39,7 +39,7 @@ def _clean_html(raw: str) -> str:
 
 
 @tool
-def read_news_article(title: str) -> str:
+async def read_news_article(title: str) -> str:
     """Look up a news article by its title and return a clickable link plus details.
 
     Searches Google News RSS for the article, then returns:
@@ -76,7 +76,7 @@ def read_news_article(title: str) -> str:
     logger.info("read_news_article: searching", query=query[:80])
 
     try:
-        with httpx.Client(timeout=HTTP_TIMEOUT, follow_redirects=True) as client:
+        async with httpx.AsyncClient(timeout=HTTP_TIMEOUT, follow_redirects=True) as client:
             response = client.get(url, headers={"User-Agent": USER_AGENT})
             response.raise_for_status()
     except httpx.TimeoutException:
