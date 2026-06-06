@@ -8,6 +8,15 @@
 
 ## 2026-06-06 — v0.5.0 新增视频搜索工具
 
+### ✨ 新增 github_search
+
+- 使用 GitHub REST API (`api.github.com/search`) 封装的 `@tool`
+- 支持 3 种搜索：repositories（仓库）、issues（Issue+PR）、code（代码，需 Token）
+- 返回 Markdown 格式化结果：仓库显示 ⭐🍴📝，Issue/PR 显示状态🟢🟣和评论数
+- 支持 GitHub 高级搜索语法（language:python stars:>100 org:xxx）
+- 无额外依赖，直接使用 httpx（已有）
+- 友好处理速率限制（403）和认证缺失（401）
+
 ### ✨ 新增 rss_feed
 
 - 基于 feedparser 封装的 `@tool`，解析任意 RSS 2.0 / Atom 1.0 订阅源

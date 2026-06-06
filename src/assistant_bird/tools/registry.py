@@ -2,6 +2,7 @@
 
 from langchain_core.tools import BaseTool
 
+from assistant_bird.custom_tools.github_search import github_search
 from assistant_bird.custom_tools.github_trending import github_trending
 from assistant_bird.custom_tools.read_article import read_news_article
 from assistant_bird.custom_tools.rss_reader import rss_feed
@@ -25,6 +26,7 @@ class ToolRegistry:
             "web_search": web_search,
             "scrape_webpage": scrape_webpage,
             "search_and_scrape": search_and_scrape,
+            "github_search": github_search,
             "github_trending": github_trending,
             "video_search": video_search,
             "world_news": world_news,

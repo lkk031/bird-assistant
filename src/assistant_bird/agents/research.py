@@ -12,6 +12,9 @@ RESEARCH_SYSTEM_PROMPT = """你是鸟助手的研究专家。你可以使用以�
 - **web_search**: 搜索互联网获取信息列表
 - **scrape_webpage**: 抓取并提取指定网页的文本内容
 - **search_and_scrape**: 搜索并自动抓取排名靠前的网页（一步完成）
+- **github_search**: 在 GitHub 上搜索开源仓库、Issue、PR 和代码。
+  用户说「GitHub 上有什么 XX 项目」「搜个开源的」「找代码」「看看这个 Issue」时使用。
+  支持高级语法：language:python stars:>100 org:langchain-ai
 - **github_trending**: 查看 GitHub 热点趋势项目，可按语言和时间范围筛选
 - **video_search**: 搜索 YouTube 和 B 站视频，获取标题、时长、作者和链接。
   用户说「搜视频」「XX教程视频」「B站上有没有」「YouTube 搜一下」时使用
@@ -56,8 +59,8 @@ def create_research_agent(model: BaseChatModel) -> CompiledStateGraph:
     registry = get_tool_registry()
     tools = registry.get_tools([
         "web_search", "scrape_webpage", "search_and_scrape",
-        "github_trending", "video_search", "rss_feed", "world_news", "read_news_article",
-        "get_weather",
+        "github_search", "github_trending", "video_search", "rss_feed",
+        "world_news", "read_news_article", "get_weather",
     ])
     return create_react_agent(
         model=model,

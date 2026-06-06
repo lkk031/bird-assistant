@@ -23,6 +23,15 @@
 - YouTube: `extract_flat=True` 快速获取标题/时长/播放量/作者/简介
 - B站: 完整提取获取标题和链接，通过浏览器 UA 头绕过 412 反爬
 
+### ✨ custom_tools/github_search.py — 新增
+
+基于 GitHub REST API 的增强搜索工具：
+- 仓库搜索：star/fork/语言/描述/最近更新
+- Issue/PR 搜索：状态/评论数/作者/更新时间
+- 代码搜索：需 GitHub Token（API 限制）
+- 支持高级搜索限定符（language:python stars:>100 等）
+- 10次/分钟速率限制（无认证），友好错误提示
+
 ### ✨ custom_tools/rss_reader.py — 新增
 
 基于 feedparser + httpx 的 RSS/Atom 阅读器：
