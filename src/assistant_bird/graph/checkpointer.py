@@ -65,6 +65,9 @@ async def create_checkpointer(db_path: str | None = None) -> BaseCheckpointSaver
     _conn = await aiosqlite.connect(str(path))
     checkpointer = AsyncSqliteSaver(_conn)
 
+    # Ensure checkpoint tables exist (idempotent if already created)
+    await checkpointer.setup()
+
     logger.info("create_checkpointer: AsyncSqliteSaver ready", db_path=str(path))
     return checkpointer
 

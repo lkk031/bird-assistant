@@ -15,6 +15,18 @@
 
 ---
 
+## 2026-06-06 — 修复异步工具调用错误 (StructuredTool does not support sync invocation)
+
+### 🐛 修复
+- **核心问题**: `langgraph-supervisor` 的 `_make_call_agent` 使用 `agent.invoke()` (同步) 调用子 Agent，
+  但 P1 异步改造后所有工具都是 `async def`，导致 `StructuredTool.invoke()` 抛出
+  `NotImplementedError('StructuredTool does not support sync invocation.')`，
+  所有工具调用全部失败，Agent 返回"临时技术问题"
+- **解决方案**: 重写 `agents/supervisor.py`，不再使用 `langgraph_supervisor.create_supervisor()`，
+  改为手动构建 supervisor graph，子 Agent 使用 `await agent.ainvoke()` 异步调用
+- 同步修复 `graph/checkpointer.py`: `create_checkpointer()` 现在显式调用 `await checkpointer.setup()`
+  确保 checkpoint 表被创建（之前依赖隐式创建，有时会遗漏）
+
 ## 2026-06-06 — 视频搜索 + RSS + GitHub 搜索 + 对话导出集成
 
 ### ⚡ HTTP 异步改造 — 全部工具切换为 httpx.AsyncClient
