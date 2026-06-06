@@ -16,6 +16,7 @@ from assistant_bird.graph.builder import build_assistant_graph
 from assistant_bird.llm.deepseek import create_deepseek_model
 from assistant_bird.logging_config import get_logger
 from assistant_bird.memory.memory_manager import get_memory_manager
+from assistant_bird.memory.context_manager import check_and_manage_context
 from assistant_bird.ui.starters import STARTERS
 
 logger = get_logger(__name__)
@@ -218,7 +219,7 @@ def _build_conversation_select(current_thread_id: str) -> list:
     items: dict[str, str] = {}
     items["➕ 新对话"] = "new"
 
-    # Only show conversations that actually have messages
+    # Show all conversations with messages, including archived ones.
     active_convos = [
         (tid, meta) for tid, meta in sorted_convos
         if meta.get("message_count", 0) > 0
@@ -228,7 +229,17 @@ def _build_conversation_select(current_thread_id: str) -> list:
         title = meta.get("title", "未命名")
         updated = meta.get("updated_at", "")[:10]
         count = meta.get("message_count", 0)
-        label = f"{updated} · {title} ({count}条)"
+        prefix = "📦 " if meta.get("archived") else ""
+        # Show fork relationships
+        continued_in = meta.get("continued_in", "")
+        continued_from = meta.get("continued_from", "")
+        if continued_in:
+            suffix = " → 续"
+        elif continued_from:
+            suffix = " ← 续前"
+        else:
+            suffix = ""
+        label = f"{prefix}{updated} · {title} ({count}条){suffix}"
         items[label] = tid
 
     if len(items) == 1:
@@ -259,29 +270,43 @@ def _build_conversation_select(current_thread_id: str) -> list:
 async def on_chat_start() -> None:
     """Initialize the assistant when a new chat session starts."""
     # Get or create a thread_id for this browser session.
-    # Key = Chainlit session ID (cl.context.session.id):
-    #   - "New Chat" → new session ID → new thread_id (clean slate)
-    #   - Page refresh → same session ID (from cookie) → same thread_id (replay history)
-    # The mapping is saved to disk so it survives server restarts.
+    # Key = Chainlit session ID. However, without auth, Chainlit may
+    # generate a new session.id on refresh. We use __last_active__
+    # as a fallback to preserve the active conversation across refreshes.
     session_id = cl.context.session.id
     thread_map = _load_thread_map()
-    is_new_thread = session_id not in thread_map
+    is_new_thread = False
 
-    if is_new_thread:
-        thread_id = str(uuid.uuid4())
-        thread_map[session_id] = thread_id
-        _save_thread_map(thread_map)
-        logger.info(
-            "on_chat_start: new thread_id",
-            session_id=session_id,
-            thread_id=thread_id,
-        )
-    else:
+    if session_id in thread_map:
+        # Exact match: same session (cookie preserved across refresh)
         thread_id = thread_map[session_id]
         logger.info(
             "on_chat_start: reusing thread_id",
             session_id=session_id,
             thread_id=thread_id,
+        )
+    else:
+        # Session not found — could be first visit, "New Chat" button,
+        # or refresh without cookie persistence.
+        last_active = thread_map.get("__last_active__")
+        if last_active:
+            # Resume the most recently active conversation (handles refresh)
+            thread_id = last_active
+        else:
+            # Truly first visit — create a new conversation
+            thread_id = str(uuid.uuid4())
+            is_new_thread = True
+
+        # Map this session to the resolved thread for future lookups
+        thread_map[session_id] = thread_id
+        thread_map["__last_active__"] = thread_id
+        _save_thread_map(thread_map)
+        logger.info(
+            "on_chat_start: resolved thread_id",
+            session_id=session_id,
+            thread_id=thread_id,
+            is_new_thread=is_new_thread,
+            has_last_active=bool(last_active),
         )
 
     cl.user_session.set("thread_id", thread_id)
@@ -295,6 +320,7 @@ async def on_chat_start() -> None:
         ).send()
         return
 
+    cl.user_session.set("model", model)  # Store for context summarization
     app = await build_assistant_graph(model)
     cl.user_session.set("app", app)
 
@@ -360,19 +386,102 @@ async def on_message(message: cl.Message) -> None:
     memory_mgr = get_memory_manager()
     memory_context = memory_mgr.get_context(user_input, USER_ID)
 
-    state = {
-        "messages": [HumanMessage(content=user_input)],
-        "active_agent": "supervisor",
-        "user_id": USER_ID,
-        "task_description": "",
-        "memory_context": memory_context,
-        "should_memorize": True,
-    }
-
+    # ── Context window management ──────────────────────────────────────
+    # Check if the conversation has grown too long. If so, summarize older
+    # messages and fork to a new thread transparently.
+    settings = get_settings()
     config = {
         "configurable": {"thread_id": thread_id},
-        "recursion_limit": get_settings().graph_recursion_limit,
+        "recursion_limit": settings.graph_recursion_limit,
     }
+
+    state_override = False  # Set to True if fork builds its own state
+    model = cl.user_session.get("model")
+    if model is not None:
+        try:
+            existing_state = await app.aget_state(config)
+            existing_messages: list = []
+            if existing_state and existing_state.values:
+                existing_messages = list(existing_state.values.get("messages", []))
+
+            seed_messages, summary, did_fork = await check_and_manage_context(
+                model, existing_messages,
+            )
+
+            if did_fork:
+                new_thread_id = str(uuid.uuid4())
+                # Update thread mapping (session → new thread)
+                thread_map = _load_thread_map()
+                old_thread_id = thread_id
+                thread_map[cl.context.session.id] = new_thread_id
+                thread_map["__last_active__"] = new_thread_id
+                _save_thread_map(thread_map)
+                cl.user_session.set("thread_id", new_thread_id)
+                thread_id = new_thread_id
+
+                # Update conversation metadata: archive old, create new
+                conversations = _load_conversations()
+                old_title = conversations.get(old_thread_id, {}).get("title", "未命名")
+                if old_thread_id in conversations:
+                    conversations[old_thread_id]["archived"] = True
+                    conversations[old_thread_id]["continued_in"] = new_thread_id
+                conversations[new_thread_id] = {
+                    "title": old_title + " (续)",
+                    "created_at": datetime.now(UTC).isoformat(),
+                    "updated_at": datetime.now(UTC).isoformat(),
+                    "message_count": 0,
+                    "continued_from": old_thread_id,
+                    "summary": summary[:200] if summary else "",
+                }
+                _save_conversations(conversations)
+
+                # Build state with seed messages (summary + recent) + current input
+                seed_messages.append(HumanMessage(content=user_input))
+                state = {
+                    "messages": seed_messages,
+                    "active_agent": "supervisor",
+                    "user_id": USER_ID,
+                    "task_description": "",
+                    "memory_context": memory_context,
+                    "should_memorize": True,
+                }
+                state_override = True
+
+                # Update config for the new thread
+                config = {
+                    "configurable": {"thread_id": thread_id},
+                    "recursion_limit": settings.graph_recursion_limit,
+                }
+
+                user_turns = sum(
+                    1 for m in existing_messages
+                    if hasattr(m, "type") and m.type in ("human", "user")
+                )
+                logger.info(
+                    "on_message: context forked",
+                    old_thread=old_thread_id,
+                    new_thread=new_thread_id,
+                    turns=user_turns,
+                )
+
+                await cl.Message(
+                    content=(
+                        f"📝 对话较长（{user_turns}轮），已自动创建续接会话。\n"
+                        "之前的对话已归档，可在设置中切换查看。"
+                    )
+                ).send()
+        except Exception as e:
+            logger.warning("on_message: context check failed, continuing", error=str(e))
+
+    if not state_override:
+        state = {
+            "messages": [HumanMessage(content=user_input)],
+            "active_agent": "supervisor",
+            "user_id": USER_ID,
+            "task_description": "",
+            "memory_context": memory_context,
+            "should_memorize": True,
+        }
 
     response_msg = cl.Message(content="")
     full_response = ""
@@ -530,7 +639,6 @@ async def on_settings_update(settings: dict) -> None:
         return
 
     session_id = cl.context.session.id
-    app = cl.user_session.get("app")
     current_thread = cl.user_session.get("thread_id")
 
     # No-op if selecting the already-active conversation
@@ -542,6 +650,7 @@ async def on_settings_update(settings: dict) -> None:
         new_thread_id = str(uuid.uuid4())
         thread_map = _load_thread_map()
         thread_map[session_id] = new_thread_id
+        thread_map["__last_active__"] = new_thread_id
         _save_thread_map(thread_map)
         cl.user_session.set("thread_id", new_thread_id)
         conversations.pop("new", None)
@@ -561,9 +670,10 @@ async def on_settings_update(settings: dict) -> None:
     title = convo.get("title", "未命名")
     count = convo.get("message_count", 0)
 
-    # Update thread mapping so refresh preserves the switch
+    # Update thread mapping so the next message goes to this conversation
     thread_map = _load_thread_map()
     thread_map[session_id] = selected
+    thread_map["__last_active__"] = selected
     _save_thread_map(thread_map)
     cl.user_session.set("thread_id", selected)
 
@@ -574,19 +684,13 @@ async def on_settings_update(settings: dict) -> None:
         title=title,
     )
 
-    # Immediately replay the conversation history in the UI
-    replayed = 0
-    if app is not None:
-        await cl.Message(
-            content=f"━━━ 📋 **{title}**（{count} 条消息）━━━"
-        ).send()
-        replayed = await _replay_messages(app, selected)
-
-    if replayed == 0:
-        await cl.Message(
-            content=f"📋 已切换到对话「{title}」，发送消息即可继续。"
-        ).send()
-    else:
-        await cl.Message(
-            content=f"⬆️ 以上是「{title}」的完整记录。发送消息即可继续此对话。"
-        ).send()
+    # Don't replay messages — the user asked for clean switching.
+    # The current conversation is already saved (checkpointer).
+    # The next user message will go to the selected conversation.
+    await cl.Message(
+        content=(
+            f"📋 **已切换到**: {title}（{count} 条消息）\n\n"
+            "发送任意消息即可继续此对话。\n"
+            "💡 如需查看历史记录，刷新页面即可。"
+        )
+    ).send()

@@ -41,6 +41,12 @@ class Settings(BaseSettings):
     # Graph execution
     graph_recursion_limit: int = 60
 
+    # Context window management
+    context_max_turns: int = 30
+    context_max_tokens: int = 40000
+    context_keep_recent: int = 5
+    context_summary_max_tokens: int = 2048
+
 
 @lru_cache
 def get_settings() -> Settings:

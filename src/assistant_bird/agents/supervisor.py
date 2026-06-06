@@ -1,9 +1,14 @@
 """Supervisor agent — the routing brain of Assistant-Bird."""
 
+from typing import Any
+
 from langchain_core.language_models import BaseChatModel
+from langchain_core.messages import SystemMessage
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph.state import CompiledStateGraph
 from langgraph_supervisor import create_supervisor
+
+from assistant_bird.graph.state import AssistantState
 
 SUPERVISOR_SYSTEM_PROMPT = """你是"鸟助手" (Assistant-Bird) 的主管 Agent。
 一个个人 AI 助手的核心调度者，负责将任务委派给最合适的专业 Agent。
@@ -34,6 +39,35 @@ SUPERVISOR_SYSTEM_PROMPT = """你是"鸟助手" (Assistant-Bird) 的主管 Agent
 - 多 Agent 协作时，最终回复保持连贯流畅"""
 
 
+def _build_supervisor_prompt(state: dict[str, Any]) -> list:
+    """Build the supervisor's message list from state.
+
+    Injects memory_context (if present) as a leading SystemMessage so
+    the supervisor sees the user's long-term facts and preferences
+    before making routing decisions.
+
+    This is a Callable prompt — create_react_agent accepts callables
+    that receive the full state dict and return a message list.
+    """
+    messages: list = []
+
+    # Inject memory context as the first system message (transient per-turn —
+    # it's set in on_message, not persisted across turns)
+    memory_context = state.get("memory_context", "")
+    if memory_context:
+        messages.append(SystemMessage(content=memory_context))
+
+    # Core supervisor instructions
+    messages.append(SystemMessage(content=SUPERVISOR_SYSTEM_PROMPT))
+
+    # Conversation history (includes the new HumanMessage from this turn)
+    existing = state.get("messages", [])
+    if existing:
+        messages.extend(existing)
+
+    return messages
+
+
 def create_supervisor_agent(
     model: BaseChatModel,
     agents: list[CompiledStateGraph],
@@ -55,7 +89,8 @@ def create_supervisor_agent(
     supervisor = create_supervisor(
         agents=agents,
         model=model,
-        prompt=SUPERVISOR_SYSTEM_PROMPT,
+        prompt=_build_supervisor_prompt,
+        state_schema=AssistantState,
         output_mode="last_message",
         supervisor_name="supervisor",
     )
