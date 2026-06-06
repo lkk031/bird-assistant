@@ -39,6 +39,7 @@ pydantic-settings = "^2.0.0"
 python-dotenv = "^1.0.0"
 structlog = "^24.0.0"
 yt-dlp = "^2026.3.17"
+feedparser = "^6.0.12"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0.0"

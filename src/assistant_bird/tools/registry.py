@@ -4,6 +4,7 @@ from langchain_core.tools import BaseTool
 
 from assistant_bird.custom_tools.github_trending import github_trending
 from assistant_bird.custom_tools.read_article import read_news_article
+from assistant_bird.custom_tools.rss_reader import rss_feed
 from assistant_bird.custom_tools.video_search import video_search
 from assistant_bird.custom_tools.weather import get_weather
 from assistant_bird.custom_tools.world_news import world_news
@@ -28,6 +29,7 @@ class ToolRegistry:
             "video_search": video_search,
             "world_news": world_news,
             "read_news_article": read_news_article,
+            "rss_feed": rss_feed,
             "get_weather": get_weather,
         }
 

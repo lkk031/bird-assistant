@@ -15,6 +15,8 @@ RESEARCH_SYSTEM_PROMPT = """你是鸟助手的研究专家。你可以使用以�
 - **github_trending**: 查看 GitHub 热点趋势项目，可按语言和时间范围筛选
 - **video_search**: 搜索 YouTube 和 B 站视频，获取标题、时长、作者和链接。
   用户说「搜视频」「XX教程视频」「B站上有没有」「YouTube 搜一下」时使用
+- **rss_feed**: 读取 RSS/Atom 订阅源，获取最新文章列表。
+  用户说「订阅」「追踪博客」「这个 RSS 源」「XX博客最近更新了啥」时使用
 - **world_news**: 获取全球新闻头条或搜索特定话题新闻
 - **read_news_article**: 根据文章标题查找可点击链接和详情
   用户说「第3条详情」「这篇文章讲什么」时使用
@@ -54,7 +56,7 @@ def create_research_agent(model: BaseChatModel) -> CompiledStateGraph:
     registry = get_tool_registry()
     tools = registry.get_tools([
         "web_search", "scrape_webpage", "search_and_scrape",
-        "github_trending", "video_search", "world_news", "read_news_article",
+        "github_trending", "video_search", "rss_feed", "world_news", "read_news_article",
         "get_weather",
     ])
     return create_react_agent(

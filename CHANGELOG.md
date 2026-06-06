@@ -15,13 +15,22 @@
 
 ---
 
-## 2026-06-06 — 视频搜索工具集成
+## 2026-06-06 — 视频搜索 + RSS 阅读器集成
 
 ### ✨ custom_tools/video_search.py — 新增
 
 基于 yt-dlp 的视频搜索工具，覆盖 YouTube 和 B站：
 - YouTube: `extract_flat=True` 快速获取标题/时长/播放量/作者/简介
 - B站: 完整提取获取标题和链接，通过浏览器 UA 头绕过 412 反爬
+
+### ✨ custom_tools/rss_reader.py — 新增
+
+基于 feedparser + httpx 的 RSS/Atom 阅读器：
+- 支持任意 RSS 2.0 / Atom 1.0 订阅源
+- 双重 SSL 回退（标准验证 → verify=False）兼容各种证书环境
+- Markdown 格式化输出（标题、日期、去 HTML 摘要、链接）
+
+### 🔧 tools/registry.py — 注册 video_search + rss_feed
 - auto 模式同时搜索两个平台
 - 详细变更见 `custom_tools/CHANGELOG.md`
 

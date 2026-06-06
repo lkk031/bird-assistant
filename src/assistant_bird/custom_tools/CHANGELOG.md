@@ -8,6 +8,16 @@
 
 ## 2026-06-06 — v0.5.0 新增视频搜索工具
 
+### ✨ 新增 rss_feed
+
+- 基于 feedparser 封装的 `@tool`，解析任意 RSS 2.0 / Atom 1.0 订阅源
+- HTTP 层用 httpx（已有的项目依赖），双重 SSL 回退策略（标准 SSL → verify=False）
+- 输出 Markdown 格式文章列表：标题、日期、摘要（去 HTML）、链接
+- 参数上限保护：limit 限制 1-20
+- 新增依赖：`feedparser`（poetry add）
+- URL 合法性校验（必须以 http:// 或 https:// 开头）
+- 完整的异常处理：超时、HTTP 错误、DNS 错误、解析失败
+
 ### ✨ 新增 video_search
 
 - 基于 yt-dlp 封装的 `@tool`，支持搜索 YouTube 和 B站(Bilibili) 视频
