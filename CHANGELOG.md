@@ -15,6 +15,19 @@
 
 ---
 
+## 2026-06-06 — 修复"开启新对话"功能
+
+### 🐛 修复
+- **问题**: 通过 Settings 下拉菜单的"➕ 新对话"选项无法可靠触发 `on_settings_update` 回调，
+  因为 Chainlit 2.11.0 的 `chat_settings_change` 事件可能不随 Select 变更立即触发
+- **解决方案**: 使用 `cl.Action` 按钮替代下拉菜单中的"➕ 新对话"条目
+  - 新增 `@cl.action_callback("start_new_conversation")` — 创建新对话的 Action 处理函数
+  - `_build_conversation_select()` — 移除下拉菜单中的"➕ 新对话"条目，只保留历史对话
+  - `on_chat_start()` — 欢迎消息和恢复消息中都添加"➕ 新对话" Action 按钮
+  - `on_settings_update()` — 移除 `selected == "new"` 分支，简化为只处理对话切换
+  - 新对话创建后立即调用 `_register_conversation()` 注册到 conversations.json
+  - 创建新对话后重新发送 ChatSettings 以刷新下拉菜单
+
 ## 2026-06-06 — 修复异步工具调用错误 (StructuredTool does not support sync invocation)
 
 ### 🐛 修复

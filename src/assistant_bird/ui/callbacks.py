@@ -221,7 +221,6 @@ def _build_conversation_select(current_thread_id: str) -> list:
     )
 
     items: dict[str, str] = {}
-    items["➕ 新对话"] = "new"
 
     # Show all conversations with messages, including archived ones.
     active_convos = [
@@ -246,18 +245,19 @@ def _build_conversation_select(current_thread_id: str) -> list:
         label = f"{prefix}{updated} · {title} ({count}条){suffix}"
         items[label] = tid
 
-    if len(items) == 1:
+    if len(items) == 0:
         items["(暂无历史对话)"] = "__none__"
 
     # initial_value must match a *value* (right side) in the items dict
     # Find the label whose value matches current_thread_id
     initial = None
-    for label, value in items.items():
+    for _label, value in items.items():
         if value == current_thread_id:
             initial = value
             break
-    if initial is None:
-        initial = "new"
+    if initial is None and items:
+        # Fall back to the most recent conversation
+        initial = next(iter(items.values()))
 
     return [
         Select(
@@ -359,6 +359,43 @@ async def on_export_conversation(action: cl.Action) -> None:
     )
 
 
+@cl.action_callback("start_new_conversation")
+async def on_start_new_conversation(action: cl.Action) -> None:
+    """Start a fresh conversation by creating a new thread_id."""
+    new_thread_id = str(uuid.uuid4())
+    thread_map = _load_thread_map()
+
+    # Map current session to the new thread
+    session_id = cl.context.session.id
+    thread_map[session_id] = new_thread_id
+    thread_map["__last_active__"] = new_thread_id
+    _save_thread_map(thread_map)
+
+    cl.user_session.set("thread_id", new_thread_id)
+
+    # Register the conversation immediately so it appears in the dropdown
+    # even before the user sends a message
+    _register_conversation(new_thread_id)
+
+    # Rebuild and re-send the conversation selector so the dropdown updates
+    select_widgets = _build_conversation_select(new_thread_id)
+    await cl.ChatSettings(inputs=select_widgets).send()
+
+    logger.info(
+        "action: new conversation created",
+        session_id=session_id,
+        thread_id=new_thread_id,
+    )
+
+    await cl.Message(
+        content=(
+            "✨ **新对话已开始！**\n\n"
+            "下方发送消息即可开始全新对话。\n"
+            "💡 之前的对话记录不会丢失，可在右上角 ⚙️ 设置中随时切换回来。"
+        ),
+    ).send()
+
+
 @cl.on_chat_start
 async def on_chat_start() -> None:
     """Initialize the assistant when a new chat session starts."""
@@ -439,7 +476,13 @@ async def on_chat_start() -> None:
                 "📁 **文件 Agent** — 文件读写、目录浏览\n"
                 "💾 **记忆 Agent** — 长期记忆、知识管理\n\n"
                 "有什么我可以帮你的吗？"
-            )
+            ),
+            actions=[cl.Action(
+                name="start_new_conversation",
+                payload={},
+                label="➕ 新对话",
+                description="开始一个全新的对话",
+            )],
         ).send()
     elif convo_count > 0:
         await cl.Message(
@@ -447,12 +490,20 @@ async def on_chat_start() -> None:
                 f"📋 **已恢复对话**: {convo_title}（{convo_count} 条消息）\n\n"
                 "点击右上角 ⚙️ 可浏览和切换历史对话。"
             ),
-            actions=[cl.Action(
-                name="export_current_conversation",
-                payload={"thread_id": thread_id},
-                label="📥 导出对话",
-                description="导出当前对话为 Markdown 文件",
-            )],
+            actions=[
+                cl.Action(
+                    name="start_new_conversation",
+                    payload={},
+                    label="➕ 新对话",
+                    description="开始一个全新的对话",
+                ),
+                cl.Action(
+                    name="export_current_conversation",
+                    payload={"thread_id": thread_id},
+                    label="📥 导出对话",
+                    description="导出当前对话为 Markdown 文件",
+                ),
+            ],
         ).send()
 
     # Build settings with conversation switcher + starters
@@ -728,9 +779,9 @@ async def on_settings_update(settings: dict) -> None:
     if not selected or selected == "__none__":
         return
 
-    # Validate: must be "new" or a known thread_id
+    # Validate: must be a known thread_id
     conversations = _load_conversations()
-    if selected != "new" and selected not in conversations:
+    if selected not in conversations:
         logger.warning(
             "on_settings_update: invalid selection, ignoring",
             selected=selected,
@@ -742,29 +793,6 @@ async def on_settings_update(settings: dict) -> None:
 
     # No-op if selecting the already-active conversation
     if selected == current_thread:
-        return
-
-    # ── "new" = start a fresh conversation ──
-    if selected == "new":
-        new_thread_id = str(uuid.uuid4())
-        thread_map = _load_thread_map()
-        thread_map[session_id] = new_thread_id
-        thread_map["__last_active__"] = new_thread_id
-        _save_thread_map(thread_map)
-        cl.user_session.set("thread_id", new_thread_id)
-        conversations.pop("new", None)
-        _save_conversations(conversations)
-        logger.info(
-            "on_settings_update: new conversation",
-            session_id=session_id,
-            thread_id=new_thread_id,
-        )
-        await cl.Message(
-            content=(
-                "✨ **新对话已开始！** 下方发送消息即可开始全新对话。\n\n"
-                "💡 之前的对话记录不会丢失，可在设置中随时切换回来。"
-            )
-        ).send()
         return
 
     # ── Switch to an existing conversation ──
