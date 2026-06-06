@@ -15,7 +15,14 @@
 
 ---
 
-## 2026-06-06 — 视频搜索 + RSS 阅读器集成
+## 2026-06-06 — 视频搜索 + RSS + GitHub 搜索 + 对话导出集成
+
+### ✨ ui/callbacks.py — 对话 Markdown 导出
+
+新增 `on_export_conversation` action callback：
+- 从 LangGraph checkpointer 读取当前对话全部消息
+- 按角色格式化为 Markdown，通过 `cl.File` 提供 `.md` 下载
+- 导出按钮出现在已恢复对话提示消息中（刷新页面可见）
 
 ### ✨ custom_tools/video_search.py — 新增
 

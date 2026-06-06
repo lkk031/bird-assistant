@@ -15,8 +15,8 @@ from assistant_bird.config import get_settings
 from assistant_bird.graph.builder import build_assistant_graph
 from assistant_bird.llm.deepseek import create_deepseek_model
 from assistant_bird.logging_config import get_logger
-from assistant_bird.memory.memory_manager import get_memory_manager
 from assistant_bird.memory.context_manager import check_and_manage_context
+from assistant_bird.memory.memory_manager import get_memory_manager
 from assistant_bird.ui.starters import STARTERS
 
 logger = get_logger(__name__)
@@ -184,7 +184,11 @@ def _extract_title(user_input: str) -> str:
         return "对话"
 
     # Remove common prefixes / noise words
-    for prefix in ["请帮我", "帮我", "请", "我想让你", "能不能", "你可以", "你可以帮我", "麻烦你", "麻烦"]:
+    noise_prefixes = [
+        "请帮我", "帮我", "请", "我想让你", "能不能",
+        "你可以", "你可以帮我", "麻烦你", "麻烦",
+    ]
+    for prefix in noise_prefixes:
         if raw.startswith(prefix):
             raw = raw[len(prefix):]
             break
@@ -264,6 +268,95 @@ def _build_conversation_select(current_thread_id: str) -> list:
             description="选择历史对话或创建新对话",
         )
     ]
+
+
+@cl.action_callback("export_current_conversation")
+async def on_export_conversation(action: cl.Action) -> None:
+    """Export the current conversation as a downloadable Markdown file."""
+    thread_id = cl.user_session.get("thread_id")
+    app = cl.user_session.get("app")
+
+    if not thread_id or not app:
+        await cl.Message(content="⚠️ 无法导出：对话尚未初始化。").send()
+        return
+
+    app = cast(CompiledStateGraph, app)
+    config = {"configurable": {"thread_id": thread_id}}
+    try:
+        state = await app.aget_state(config)
+    except Exception as e:
+        logger.error("export: failed to load state", error=str(e))
+        await cl.Message(content="⚠️ 加载对话失败，请稍后重试。").send()
+        return
+
+    if not state or not state.values:
+        await cl.Message(content="⚠️ 当前对话无内容可导出。").send()
+        return
+
+    messages = state.values.get("messages", [])
+    if not messages:
+        await cl.Message(content="⚠️ 当前对话无内容可导出。").send()
+        return
+
+    # Build Markdown
+    conversations = _load_conversations()
+    convo = conversations.get(thread_id, {})
+    title = convo.get("title", "对话导出")
+    date_str = datetime.now().strftime("%Y-%m-%d_%H%M")
+
+    lines = [
+        f"# {title}",
+        "",
+        f"> 导出时间: {datetime.now().strftime('%Y-%m-%d %H:%M')}  |  "
+        f"共 {len(messages)} 条消息  |  "
+        f"thread: {thread_id[:8]}",
+        "",
+        "---",
+        "",
+    ]
+
+    for msg in messages:
+        role = getattr(msg, "type", "")
+        content = str(getattr(msg, "content", ""))
+
+        if role in ("human", "user"):
+            lines.append("### 🧑 用户")
+        elif role in ("ai", "assistant"):
+            lines.append("### 🤖 鸟助手")
+        elif role == "tool":
+            tool_name = getattr(msg, "name", "")
+            label = f"工具: {tool_name}" if tool_name else "工具"
+            lines.append(f"### 🔧 {label}")
+        elif role == "system":
+            lines.append("### ⚙️ 系统")
+        else:
+            lines.append(f"### {role}")
+
+        lines.append("")
+        lines.append(content.strip())
+        lines.append("")
+
+    markdown = "\n".join(lines)
+    filename = f"conversation-{date_str}-{thread_id[:8]}.md"
+
+    await cl.Message(
+        content="📥 对话已导出",
+        elements=[
+            cl.File(
+                name=filename,
+                content=markdown.encode("utf-8"),
+                display="inline",
+                mime="text/markdown",
+            )
+        ],
+    ).send()
+
+    logger.info(
+        "export: conversation exported",
+        thread_id=thread_id,
+        message_count=len(messages),
+        file_size=len(markdown),
+    )
 
 
 @cl.on_chat_start
@@ -353,7 +446,12 @@ async def on_chat_start() -> None:
             content=(
                 f"📋 **已恢复对话**: {convo_title}（{convo_count} 条消息）\n\n"
                 "点击右上角 ⚙️ 可浏览和切换历史对话。"
-            )
+            ),
+            actions=[cl.Action(
+                name="export_current_conversation",
+                label="📥 导出对话",
+                description="导出当前对话为 Markdown 文件",
+            )],
         ).send()
 
     # Build settings with conversation switcher + starters
@@ -661,7 +759,10 @@ async def on_settings_update(settings: dict) -> None:
             thread_id=new_thread_id,
         )
         await cl.Message(
-            content="✨ **新对话已开始！** 下方发送消息即可开始全新对话。\n\n💡 之前的对话记录不会丢失，可在设置中随时切换回来。"
+            content=(
+                "✨ **新对话已开始！** 下方发送消息即可开始全新对话。\n\n"
+                "💡 之前的对话记录不会丢失，可在设置中随时切换回来。"
+            )
         ).send()
         return
 
