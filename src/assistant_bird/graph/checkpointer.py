@@ -4,7 +4,6 @@ Uses langgraph-checkpoint-sqlite's AsyncSqliteSaver for cross-session
 persistence with async support. Graph state survives server restarts.
 """
 
-import asyncio
 from pathlib import Path
 
 import aiosqlite
@@ -70,12 +69,3 @@ async def create_checkpointer(db_path: str | None = None) -> BaseCheckpointSaver
 
     logger.info("create_checkpointer: AsyncSqliteSaver ready", db_path=str(path))
     return checkpointer
-
-
-def create_checkpointer_sync(db_path: str | None = None) -> BaseCheckpointSaver:
-    """Synchronous wrapper for create_checkpointer.
-
-    Uses asyncio.run() to create the async checkpointer.
-    Suitable for use in synchronous contexts.
-    """
-    return asyncio.run(create_checkpointer(db_path))

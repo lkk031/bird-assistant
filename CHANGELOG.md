@@ -15,7 +15,97 @@
 
 ---
 
-## 2026-06-06 — 修复"开启新对话"功能
+## 2026-06-07 — 重构：拆分 callbacks.py + 删除死代码
+
+### 🧹 优化
+- **`ui/callbacks.py` 拆分** (825行→447行, -46%):
+  - `conversations.py` (新, 259行) — 对话元数据 CRUD、thread 映射、历史重放、标题提取、下拉菜单构建
+  - `actions.py` (新, 140行) — `cl.Action` 回调（新对话、导出）
+  - `callbacks.py` (447行) — 仅保留 Chainlit 生命周期（on_chat_start/on_message/on_chat_end/on_settings_update）
+  - 所有内部函数去掉 `_` 前缀，作为模块公开 API（拆分后跨模块调用）
+- **删除死代码**:
+  - `ui/renderers.py` — 整个文件（31行），从未被导入或调用
+  - `graph/checkpointer.py` — `create_checkpointer_sync` 死函数 + `import asyncio`（-10行）
+  - `ui/callbacks.py` — `__last_active__` 写入 4 处（只写不读）+ 过时注释
+  - `data/thread_map.json` — 过期 `__last_active__` key
+- **pyproject.toml** — ruff exclude 新增 `public/`
+
+## 2026-06-07 — 代码清理：删除死代码
+
+### 🧹 优化
+- **`ui/renderers.py`** — 删除整个文件（31行）。`render_agent_switch` / `render_tool_call`
+  从未被任何模块导入或调用，Agent 切换和工具渲染已在 `callbacks.py` 内联实现
+- **`graph/checkpointer.py`** — 删除 `create_checkpointer_sync`（同步包装器从未被调用）
+  及唯一消费它的 `import asyncio`（-10 行）
+- **`ui/callbacks.py`** — 删除 `__last_active__` 所有写入（4 处）。
+  `on_chat_start` 已不再回退到 `__last_active__`，只写不读 = 死代码。
+  同步更新相关注释，清理 `data/thread_map.json` 中过期的 `__last_active__` key
+- **`pyproject.toml`** — ruff exclude 新增 `public/`（避免将 script.js 当 Python 解析）
+
+## 2026-06-07 — 真正修复"开启新对话"闪回问题（第三轮·终局）
+
+### 🐛 修复（续·续）
+- **真实根因**: 用户点击的是 **Chainlit 原生 "New Chat" 按钮**（`config.toml` 中 `confirm_new_chat = true`），
+  位于页面左上角，而非我们 Attach 在消息中的 `cl.Action` 按钮。
+  Chainlit 原生按钮创建**新的 session_id**，但 `on_chat_start` 中的 `__last_active__` 回退逻辑
+  会将新 session 拉回旧对话的 thread_id → **闪到空白→立即回放旧消息**。
+- **核心修复**: `on_chat_start` — 移除 `__last_active__` 回退逻辑。
+  新 session（未在 `thread_map` 中）→ 创建全新 thread_id，不再尝试"恢复最近对话"。
+  这是最简洁正确的语义：新 session = 新对话。
+- **辅助修复**: `script.js` — 移除 cookie 清除逻辑。
+  Action 按钮的 `send_window_message` 只需触发干净导航，保留 session cookie
+  才能让 `on_chat_start` 通过 `thread_map[session_id]` 找到刚设置的新 thread_id。
+- **影响的文件**:
+  - `src/assistant_bird/ui/callbacks.py` — `on_chat_start` 移除 `__last_active__` 回退
+  - `public/script.js` — 简化为纯导航，去掉 cookie/storage 清除
+
+### 🔍 两套"新对话"机制说明
+
+| 入口 | 位置 | 机制 | session_id | thread 决议 |
+|------|------|------|-----------|------------|
+| Chainlit 原生 "New Chat" | 左上角 Header | 浏览器导航到 `/` | 新 session | `on_chat_start`: 不在 thread_map → 新建 |
+| "➕ 新对话" Action 按钮 | 消息内嵌 | `on_start_new_conversation` 回调 | 同一 session | `on_chat_start`: thread_map 中查到 → 用新的 |
+
+两者都正确开启空白新对话，互不冲突。
+
+## 2026-06-07 — 修复"开启新对话"辅助问题（第一轮·第二轮）
+- **问题**: 第一轮修复只解决了下拉菜单、starters、Action 按钮等辅���问题，但核心体验仍未改善 —
+  点击"➕ 新对话"后旧消息仍然残留在界面上，用户看不到空白对话窗口
+- **根因**: Chainlit 没有 Python API 可以清除已渲染的消息，仅靠 `cl.Message` 无法实现"跳转到空白对话"
+- **解决方案（三管齐下）**:
+  1. **页面自动重载**: 新建 `public/script.js`，监听 `window.postMessage` 事件；
+     `on_start_new_conversation` 调用 `cl.send_window_message({"type": "assistant_bird_reload"})`
+     通知浏览器刷新页面 → 触发 `on_chat_start` → 干净状态
+  2. **`on_chat_start` 空对话修复**: 将欢迎消息条件从 `is_new_thread` 扩为
+     `is_new_thread or convo_count == 0`，确保页面重载后（新对话 message_count=0）也显示欢迎界面
+  3. **配置启用**: `.chainlit/config.toml` 启用 `custom_js = "/public/script.js"`；
+     `pyproject.toml` ruff exclude 新增 `public/`
+- **涉及的修改文件**:
+  - `public/script.js` — 新增，监听 reload 信号并执行 `window.location.reload()`
+  - `.chainlit/config.toml` — 启用 custom_js
+  - `src/assistant_bird/ui/callbacks.py` — `on_start_new_conversation` 末端改为 `send_window_message`；
+    `on_chat_start` 空对话显示欢迎消息
+  - `pyproject.toml` — ruff exclude `public/`
+
+## 2026-06-07 — 真正修复"开启新对话"功能（第一轮）
+
+### 🐛 修复
+- **问题**: 上次修复（b1de031）将"➕ 新对话"从 Select 下拉菜单改为 `cl.Action` 按钮，
+  但点击后仍然没有立刻跳转到新对话，实测未生效
+- **根因分析**:
+  1. `_build_conversation_select()` 过滤掉了 `message_count == 0` 的对话，新注册的对话
+     （message_count=0）不会出现在下拉菜单中，`initial_value` 回退到最近一条历史对话，
+     **看起来就像没切换**
+  2. `on_start_new_conversation` 发送 `ChatSettings` 时缺少 `starters=STARTERS`，
+     导致快捷入口消失
+  3. 确认消息缺少 Action 按钮（"➕ 新对话" / "📥 导出对话"），用户无法连续创建新对话
+- **解决方案**:
+  - `_build_conversation_select()` — 当 `current_thread_id` 不在已有的历史对话列表中时
+    （message_count=0 的新对话），自动添加 `🆕 新对话` 条目并设为 `initial_value`
+  - `on_start_new_conversation()` — `ChatSettings` 补上 `starters=STARTERS`
+  - `on_start_new_conversation()` — 确认消息新增 Action 按钮
+
+## 2026-06-06 — 修复"开启新对话"功能（未生效，已被 2026-06-07 修复覆盖）
 
 ### 🐛 修复
 - **问题**: 通过 Settings 下拉菜单的"➕ 新对话"选项无法可靠触发 `on_settings_update` 回调，
