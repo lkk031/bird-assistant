@@ -5,7 +5,9 @@
 - `tools/` — 内置工具（搜索/抓取/注册）
 - `graph/` — LangGraph 图与状态
 - `memory/` — 记忆系统（Mem0/Chroma/SQLite）
-- `ui/` — Chainlit 界面与回调
+- `ui/` — 对话管理（conversations.py）
+- `server/` — HTTP API（Quart SSE 流式）
+- `desktop/` — 桌面窗口与聊天前端（pywebview + HTML/CSS/JS）
 - `config/` — 配置与环境变量
 - 基础设施（pyproject/README/测试等）
 
@@ -15,20 +17,35 @@
 
 ---
 
-## 2026-06-07 — 重构：拆分 callbacks.py + 删除死代码
 
-### 🧹 优化
-- **`ui/callbacks.py` 拆分** (825行→447行, -46%):
-  - `conversations.py` (新, 259行) — 对话元数据 CRUD、thread 映射、历史重放、标题提取、下拉菜单构建
-  - `actions.py` (新, 140行) — `cl.Action` 回调（新对话、导出）
-  - `callbacks.py` (447行) — 仅保留 Chainlit 生命周期（on_chat_start/on_message/on_chat_end/on_settings_update）
-  - 所有内部函数去掉 `_` 前缀，作为模块公开 API（拆分后跨模块调用）
-- **删除死代码**:
-  - `ui/renderers.py` — 整个文件（31行），从未被导入或调用
-  - `graph/checkpointer.py` — `create_checkpointer_sync` 死函数 + `import asyncio`（-10行）
-  - `ui/callbacks.py` — `__last_active__` 写入 4 处（只写不读）+ 过时注释
-  - `data/thread_map.json` — 过期 `__last_active__` key
-- **pyproject.toml** — ruff exclude 新增 `public/`
+
+## 2026-06-07 — 🎉 桌面化重构：Chainlit → pywebview + Quart
+
+### 🏗 架构变更
+- **UI 层完全替换**: `chainlit` → `pywebview` (原生桌面窗口) + `quart` (HTTP+SSE 服务器)
+- 前端 HTML/CSS/JS → Quart SSE API → LangGraph Agent Graph
+- 前端与后端通过 HTTP/SSE 通信，无需 WebSocket
+- 单进程运行：Quart 在后台线程，pywebview 在主线程
+
+### ➕ 新增
+- `app_dir.py` — 平台适配应用数据目录
+- `server/` — Quart HTTP+SSE 服务器 (app/routes/session, 7 端点)
+- `desktop/` — 前端 (index.html/css/js) + pywebview 窗口管理
+- `desktop/assistant-bird.desktop` — Linux 桌面入口
+
+### ➖ 删除
+- `ui/callbacks.py`, `ui/actions.py`, `ui/starters.py` — Chainlit 生命周期
+- `public/script.js`, `public/stylesheet.css` — Chainlit 自定义资源
+- `.chainlit/config.toml` — Chainlit 配置
+
+### 🔧 修改
+- `config.py` — 数据路径默认使用 `app_dir` (Field default_factory)
+- `conversations.py` — 移除 Chainlit 依赖，改为纯数据 I/O
+- `main.py` — `chainlit run` 子进程 → `start_desktop()` + argparse
+- `pyproject.toml` — chainlit → quart + pywebview + platformdirs; v0.2.0
+- `CLAUDE.md` — 更新架构文档
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
 
 ## 2026-06-07 — 代码清理：删除死代码
 

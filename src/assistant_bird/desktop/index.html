@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>鸟助手 (Assistant-Bird)</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <!-- Sidebar -->
+  <aside id="sidebar">
+    <div class="sidebar-header">
+      <h1 class="app-title">🐦 鸟助手</h1>
+      <span class="app-version">v0.2.0</span>
+    </div>
+    <button id="new-chat-btn" class="btn-primary">➕ 新对话</button>
+    <div id="conversation-list"></div>
+    <div class="sidebar-footer">
+      <button id="export-btn" class="btn-secondary" disabled>📥 导出当前对话</button>
+      <div id="status-indicator" class="status-dot connected" title="就绪"></div>
+    </div>
+  </aside>
+
+  <!-- Main Chat Area -->
+  <main id="main">
+    <div id="chat-container">
+      <div id="welcome-screen">
+        <div class="welcome-icon">🐦</div>
+        <h2>鸟助手 (Assistant-Bird)</h2>
+        <p>多 Agent 协作 AI 助手</p>
+        <div class="agent-roster">
+          <span>🧠 主管</span>
+          <span>💬 通用助手</span>
+          <span>🔍 研究员</span>
+          <span>📁 文件操作</span>
+          <span>💾 记忆管理</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Input Area -->
+    <div id="input-area">
+      <label for="file-input" id="attach-btn" title="上传文件">📎</label>
+      <input type="file" id="file-input" style="display:none">
+      <textarea id="message-input" rows="1" placeholder="输入消息，Enter 发送，Shift+Enter 换行…"></textarea>
+      <button id="send-btn" title="发送">➤</button>
+    </div>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="/js/stream.js"></script>
+  <script src="/js/components.js"></script>
+  <script src="/js/app.js"></script>
+</body>
+</html>

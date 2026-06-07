@@ -3,15 +3,15 @@
 This module owns the data layer for the conversation switcher:
 - thread_map.json   — session_id → thread_id mapping
 - conversations.json — per-thread metadata (title, timestamps, message counts)
-- _replay_messages  — reads LangGraph state into the Chainlit UI
+
+All functions are pure data I/O — no UI framework dependencies.
+Message retrieval and rendering are handled by server/routes.py and
+the desktop frontend respectively.
 """
 
 import json
 from datetime import UTC, datetime
 from pathlib import Path
-
-import chainlit as cl
-from chainlit.input_widget import Select
 
 from assistant_bird.logging_config import get_logger
 
@@ -19,8 +19,29 @@ logger = get_logger(__name__)
 
 # ── File paths ────────────────────────────────────────────────────────────
 
-THREAD_MAP_FILE = Path("data/thread_map.json")
-CONVERSATIONS_FILE = Path("data/conversations.json")
+
+def _get_data_path(filename: str) -> Path:
+    """Return a path under the app data directory, with CWD fallback."""
+    from assistant_bird.app_dir import get_app_dir
+
+    app_dir = get_app_dir()
+    return app_dir / "data" / filename
+
+
+def _resolve_thread_map_path() -> Path:
+    """Resolve thread_map.json path: app_dir first, CWD fallback."""
+    cwd_path = Path("data/thread_map.json")
+    if cwd_path.exists():
+        return cwd_path
+    return _get_data_path("thread_map.json")
+
+
+def _resolve_conversations_path() -> Path:
+    """Resolve conversations.json path: app_dir first, CWD fallback."""
+    cwd_path = Path("data/conversations.json")
+    if cwd_path.exists():
+        return cwd_path
+    return _get_data_path("conversations.json")
 
 # ── Conversation index cache ──────────────────────────────────────────────
 
@@ -33,8 +54,8 @@ _conversations_cache: dict[str, dict] | None = None
 def load_thread_map() -> dict[str, str]:
     """Load the session_id → thread_id mapping from disk."""
     try:
-        if THREAD_MAP_FILE.exists():
-            return json.loads(THREAD_MAP_FILE.read_text())
+        if _resolve_thread_map_path().exists():
+            return json.loads(_resolve_thread_map_path().read_text())
     except Exception:
         pass
     return {}
@@ -42,8 +63,8 @@ def load_thread_map() -> dict[str, str]:
 
 def save_thread_map(data: dict[str, str]) -> None:
     """Save the session_id → thread_id mapping to disk."""
-    THREAD_MAP_FILE.parent.mkdir(parents=True, exist_ok=True)
-    THREAD_MAP_FILE.write_text(json.dumps(data))
+    _resolve_thread_map_path().parent.mkdir(parents=True, exist_ok=True)
+    _resolve_thread_map_path().write_text(json.dumps(data))
 
 
 # ── Conversation metadata ─────────────────────────────────────────────────
@@ -55,8 +76,8 @@ def load_conversations() -> dict[str, dict]:
     if _conversations_cache is not None:
         return _conversations_cache
     try:
-        if CONVERSATIONS_FILE.exists():
-            _conversations_cache = json.loads(CONVERSATIONS_FILE.read_text())
+        if _resolve_conversations_path().exists():
+            _conversations_cache = json.loads(_resolve_conversations_path().read_text())
             return _conversations_cache
     except Exception:
         pass
@@ -68,8 +89,8 @@ def save_conversations(data: dict[str, dict]) -> None:
     """Save conversation index to disk and update cache."""
     global _conversations_cache
     _conversations_cache = data
-    CONVERSATIONS_FILE.parent.mkdir(parents=True, exist_ok=True)
-    CONVERSATIONS_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2))
+    _resolve_conversations_path().parent.mkdir(parents=True, exist_ok=True)
+    _resolve_conversations_path().write_text(json.dumps(data, ensure_ascii=False, indent=2))
 
 
 def register_conversation(thread_id: str, title: str = "") -> None:
@@ -113,53 +134,6 @@ def update_conversation(
     save_conversations(conversations)
 
 
-# ── Message replay ────────────────────────────────────────────────────────
-
-
-async def replay_messages(app, thread_id: str) -> int:
-    """Replay conversation history from LangGraph state into the Chainlit UI.
-
-    Returns the number of messages replayed (0 if thread is empty or missing).
-    """
-    try:
-        config = {"configurable": {"thread_id": thread_id}}
-        state = await app.aget_state(config)
-        if not state or not state.values:
-            return 0
-
-        messages = state.values.get("messages", [])
-        if not messages:
-            return 0
-
-        logger.info(
-            "replay_messages: replaying history",
-            thread_id=thread_id,
-            message_count=len(messages),
-        )
-        for msg in messages:
-            if hasattr(msg, "type"):
-                role = msg.type
-                content = msg.content
-            elif isinstance(msg, dict):
-                role = msg.get("type", "")
-                content = msg.get("content", "")
-            else:
-                continue
-
-            if not content:
-                continue
-
-            if role in ("human", "user"):
-                await cl.Message(content=str(content), author="You").send()
-            elif role in ("ai", "assistant"):
-                await cl.Message(content=str(content)).send()
-
-        return len(messages)
-    except Exception as e:
-        logger.warning("replay_messages: replay failed", error=str(e))
-        return 0
-
-
 # ── Title extraction ──────────────────────────────────────────────────────
 
 
@@ -192,68 +166,3 @@ def extract_title(user_input: str) -> str:
 
     return raw.strip() or user_input.strip()[:30]
 
-
-# ── Conversation selector widget ──────────────────────────────────────────
-
-
-def build_conversation_select(current_thread_id: str) -> list:
-    """Build a ChatSettings Select widget for conversation switching."""
-    conversations = load_conversations()
-    sorted_convos = sorted(
-        conversations.items(),
-        key=lambda kv: kv[1].get("updated_at", ""),
-        reverse=True,
-    )
-
-    items: dict[str, str] = {}
-
-    active_convos = [
-        (tid, meta) for tid, meta in sorted_convos
-        if meta.get("message_count", 0) > 0
-    ]
-
-    for tid, meta in active_convos[:30]:
-        title = meta.get("title", "未命名")
-        updated = meta.get("updated_at", "")[:10]
-        count = meta.get("message_count", 0)
-        prefix = "📦 " if meta.get("archived") else ""
-        continued_in = meta.get("continued_in", "")
-        continued_from = meta.get("continued_from", "")
-        if continued_in:
-            suffix = " → 续"
-        elif continued_from:
-            suffix = " ← 续前"
-        else:
-            suffix = ""
-        label = f"{prefix}{updated} · {title} ({count}条){suffix}"
-        items[label] = tid
-
-    # Always include the current conversation, even if it has 0 messages
-    current_is_new = current_thread_id not in [v for v in items.values()]
-    if current_is_new:
-        convo_meta = conversations.get(current_thread_id, {})
-        title = convo_meta.get("title", "新对话")
-        items[f"🆕 {title}"] = current_thread_id
-
-    if len(items) == 0:
-        items["(暂无历史对话)"] = "__none__"
-
-    # Resolve initial_value to match current_thread_id
-    initial = current_thread_id if current_is_new else None
-    if initial is None:
-        for _label, value in items.items():
-            if value == current_thread_id:
-                initial = value
-                break
-    if initial is None and items:
-        initial = next(iter(items.values()))
-
-    return [
-        Select(
-            id="conversation_switch",
-            label="📋 对话历史",
-            items=items,
-            initial_value=initial,
-            description="选择历史对话或创建新对话",
-        )
-    ]

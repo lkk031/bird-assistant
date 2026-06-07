@@ -1,16 +1,23 @@
-"""Application configuration loaded from environment variables."""
+"""Application configuration loaded from environment variables.
+
+All data paths default to the platform-appropriate user data directory
+(via get_app_dir()) so the app works regardless of CWD.
+"""
 
 from functools import lru_cache
 from pathlib import Path
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from assistant_bird.app_dir import get_app_dir, get_config_path
 
 
 class Settings(BaseSettings):
     """Application settings loaded from .env file and environment variables."""
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=get_config_path(".env"),
         env_file_encoding="utf-8",
         extra="ignore",
     )
@@ -24,12 +31,20 @@ class Settings(BaseSettings):
     mem0_api_key: str = ""
 
     # Workspace
-    workspace_root: Path = Path("./workspace")
+    workspace_root: Path = Field(
+        default_factory=lambda: get_app_dir() / "workspace"
+    )
 
     # Data paths
-    chroma_persist_dir: Path = Path("./data/chroma")
-    sqlite_db_path: Path = Path("./data/conversations.db")
-    checkpoint_db_path: Path = Path("./data/checkpoints.db")
+    chroma_persist_dir: Path = Field(
+        default_factory=lambda: get_app_dir() / "data" / "chroma"
+    )
+    sqlite_db_path: Path = Field(
+        default_factory=lambda: get_app_dir() / "data" / "conversations.db"
+    )
+    checkpoint_db_path: Path = Field(
+        default_factory=lambda: get_app_dir() / "data" / "checkpoints.db"
+    )
 
     # Logging
     log_level: str = "INFO"

@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=鸟助手 (Assistant-Bird)
+Comment=AI Assistant with Multi-Agent Collaboration
+Exec=assistant-bird
+Icon=assistant-bird
+Terminal=false
+Type=Application
+Categories=Utility;AI;
+Keywords=ai;assistant;chat;bird;
+StartupWMClass=assistant-bird

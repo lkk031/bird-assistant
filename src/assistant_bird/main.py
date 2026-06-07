@@ -1,46 +1,40 @@
-"""Assistant-Bird entry point — Chainlit application runner.
+"""Assistant-Bird entry point — desktop and CLI launcher.
 
 Usage:
-    chainlit run src/assistant_bird/main.py
-    or
-    poetry run assistant-bird
+    poetry run assistant-bird              # Desktop window (pywebview)
+    poetry run assistant-bird --dev        # Open in browser (development)
+    poetry run python -m assistant_bird.main --dev
 """
-
-import sys
 
 from assistant_bird.logging_config import setup_logging
 
 
 def run() -> None:
-    """CLI entry point for assistant-bird (invoked via `poetry run assistant-bird`)."""
+    """CLI entry point (invoked via `poetry run assistant-bird`)."""
     setup_logging()
 
-    print("🐦 Assistant-Bird (鸟助手) v0.1.0")
-    print("Starting Chainlit server...")
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="🐦 鸟助手 (Assistant-Bird) — Multi-Agent AI Assistant"
+    )
+    parser.add_argument(
+        "--dev",
+        action="store_true",
+        help="Open in browser instead of desktop window (for development)",
+    )
+    args = parser.parse_args()
+
+    from assistant_bird.desktop.window import start_desktop
+
+    print("🐦 Assistant-Bird (鸟助手) v0.2.0")
+    if args.dev:
+        print("Development mode — opening in browser")
+    else:
+        print("Starting desktop window...")
     print()
 
-    # Delegate to chainlit CLI
-    import subprocess
-
-    subprocess.run(
-        [
-            sys.executable, "-m", "chainlit", "run",
-            "src/assistant_bird/main.py",
-        ],
-        check=False,
-    )
-
-
-# Chainlit auto-discovers these by importing the module.
-# We import our callbacks so they register with Chainlit.
-from assistant_bird.ui.callbacks import (  # noqa: E402, F401
-    on_chat_end,
-    on_chat_start,
-    on_message,
-)
-
-# Setup logging when module is loaded
-setup_logging()
+    start_desktop(dev_mode=args.dev)
 
 
 if __name__ == "__main__":
