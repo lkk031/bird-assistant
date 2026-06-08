@@ -193,15 +193,15 @@ var Components = (function () {
       var date = (convo.updated_at || "").slice(0, 10);
       meta.textContent = date + " · " + convo.message_count + " 条消息";
 
-      // Delete button (×)
+      // Delete button — always rendered, visible on hover via CSS
       var delBtn = document.createElement("button");
       delBtn.className = "convo-delete";
-      delBtn.textContent = "×";
+      delBtn.innerHTML = "&#x2715;";  // ✕ symbol
       delBtn.title = "删除对话";
       delBtn.addEventListener("click", function (e) {
         e.stopPropagation();  // don't trigger conversation switch
-        if (typeof App !== "undefined" && App.deleteConversation) {
-          App.deleteConversation(convo.id);
+        if (window.App && window.App.deleteConversation) {
+          window.App.deleteConversation(convo.id);
         }
       });
 
