@@ -199,7 +199,7 @@ var Components = (function () {
       textDiv.appendChild(title);
       textDiv.appendChild(meta);
 
-      // Delete button — subtle ×, visible on row hover via CSS
+      // Delete button — visible only on row hover (JS-driven)
       var delBtn = document.createElement("button");
       delBtn.className = "convo-delete";
       delBtn.textContent = "×";
@@ -209,13 +209,31 @@ var Components = (function () {
         "border:none;border-radius:4px;" +
         "background:transparent;color:var(--text-muted);" +
         "font-size:16px;line-height:22px;cursor:pointer;" +
-        "opacity:0;transition:opacity 150ms ease;"
+        "display:none;"
       );
       delBtn.addEventListener("click", function (e) {
         e.stopPropagation();
         if (window.App && window.App.deleteConversation) {
           window.App.deleteConversation(convo.id);
         }
+      });
+
+      // Show × on row hover, turn red on button hover
+      item.addEventListener("mouseenter", function() {
+        delBtn.style.display = "block";
+      });
+      item.addEventListener("mouseleave", function() {
+        delBtn.style.display = "none";
+      });
+      delBtn.addEventListener("mouseenter", function(e) {
+        e.stopPropagation();
+        delBtn.style.background = "var(--error)";
+        delBtn.style.color = "#fff";
+      });
+      delBtn.addEventListener("mouseleave", function(e) {
+        e.stopPropagation();
+        delBtn.style.background = "transparent";
+        delBtn.style.color = "var(--text-muted)";
       });
 
       item.appendChild(textDiv);

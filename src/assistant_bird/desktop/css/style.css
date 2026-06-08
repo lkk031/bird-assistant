@@ -148,17 +148,6 @@ body {
   font-size: 16px;
   line-height: 22px;
   cursor: pointer;
-  opacity: 0;
-  transition: opacity 150ms ease;
-}
-
-.convo-item:hover .convo-delete {
-  opacity: 1;
-}
-
-.convo-item .convo-delete:hover {
-  background: var(--error);
-  color: #fff;
 }
 
 .convo-item .convo-badge {
