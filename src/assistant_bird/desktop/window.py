@@ -1,12 +1,16 @@
 """Desktop window management via pywebview.
 
-Starts the Quart server in a background thread and opens a native OS
-window displaying the chat UI. Supports a --dev mode for browser-based
+Starts the Quart server as a subprocess and opens a native OS window
+displaying the chat UI. Supports a --dev mode for browser-based
 development.
+
+On Python 3.13+, asyncio signal handlers cannot be registered from
+background threads, so we run hypercorn in its own process.
 """
 
+import subprocess
 import sys
-import threading
+import time
 
 from assistant_bird.logging_config import get_logger
 
@@ -19,6 +23,25 @@ DEFAULT_HEIGHT = 800
 MIN_WIDTH = 800
 MIN_HEIGHT = 600
 
+# Module path for hypercorn to load the Quart app
+APP_MODULE = "assistant_bird.server.app:create_app()"
+
+
+def _wait_for_server(url: str, timeout: float = 30.0) -> bool:
+    """Poll the health endpoint until the server is ready."""
+    import urllib.request
+
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            resp = urllib.request.urlopen(f"{url}/health", timeout=0.5)
+            if resp.status == 200:
+                return True
+        except Exception:
+            pass
+        time.sleep(0.2)
+    return False
+
 
 def start_desktop(dev_mode: bool = False) -> None:
     """Start the desktop application.
@@ -27,72 +50,59 @@ def start_desktop(dev_mode: bool = False) -> None:
         dev_mode: If True, open in the default browser instead of a
                   pywebview window. Useful for UI development.
     """
-    from assistant_bird.graph.builder import build_assistant_graph
-    from assistant_bird.llm.deepseek import create_deepseek_model
-    from assistant_bird.server.app import create_app
-    from assistant_bird.server.session import get_session
-
-    # Initialize the backend session
-    session = get_session()
-    model = create_deepseek_model()
-    session.model = model
-
-    # Build the agent graph (this is the expensive step)
-    logger.info("desktop: building agent graph...")
-    import asyncio
-    loop = asyncio.new_event_loop()
-    app_graph = loop.run_until_complete(build_assistant_graph(model))
-    loop.close()
-    session.app = app_graph
-    logger.info("desktop: agent graph ready")
-
-    # Create the Quart web app
-    web_app = create_app()
-
-    # Start Quart server in a background thread
-    def run_server():
-        import asyncio as _asyncio
-        import logging
-
-        # Suppress hypercorn access logs unless debugging
-        logging.getLogger("hypercorn.access").setLevel(logging.WARNING)
-
-        _asyncio.run(
-            web_app.run_task(
-                host="127.0.0.1",
-                port=DEFAULT_PORT,
-                shutdown_trigger=lambda: None,  # Never auto-shutdown
-            )
-        )
-
-    server_thread = threading.Thread(target=run_server, daemon=True)
-    server_thread.start()
-
     url = f"http://localhost:{DEFAULT_PORT}"
+
+    # Start the Quart server as a subprocess so that asyncio signal
+    # handlers work correctly (hypercorn requires the main thread).
+    logger.info("desktop: starting server subprocess", port=DEFAULT_PORT)
+
+    server_proc = subprocess.Popen(
+        [
+            sys.executable, "-m", "hypercorn",
+            "--bind", f"127.0.0.1:{DEFAULT_PORT}",
+            "--workers", "1",
+            "--access-logfile", "-" if dev_mode else "/dev/null",
+            APP_MODULE,
+        ],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+
+    # Wait for the server to be ready
+    logger.info("desktop: waiting for server to be ready...")
+    if not _wait_for_server(url, timeout=45.0):
+        logger.error("desktop: server failed to start within timeout")
+        server_proc.kill()
+        server_proc.wait()
+        print("\n⚠️  服务器启动超时，请检查 DeepSeek API Key 是否已配置。")
+        sys.exit(1)
+
+    logger.info("desktop: server ready", url=url)
 
     if dev_mode:
         import webbrowser
+
         logger.info("desktop: opening in browser (dev mode)", url=url)
+        print(f"\n🌐 浏览器模式: {url}\n按 Ctrl+C 退出\n")
         webbrowser.open(url)
-        # Keep the main thread alive
+
         try:
-            server_thread.join()
+            server_proc.wait()
         except KeyboardInterrupt:
             logger.info("desktop: shutting down")
+            server_proc.terminate()
+            server_proc.wait()
     else:
         try:
             import webview
         except ImportError:
-            logger.error(
-                "desktop: pywebview not installed. "
-                "Install with: pip install pywebview\n"
-                "For Linux you may need: sudo apt install "
-                "python3-gi gir1.2-webkit2-4.0"
-            )
+            logger.error("desktop: pywebview not installed")
             print(
                 "\n⚠️  pywebview 未安装。使用 --dev 模式在浏览器中运行。\n"
-                "    Linux 依赖: sudo apt install python3-gi gir1.2-webkit2-4.0\n"
+                "    Linux 依赖: sudo apt install python3-gi gir1.2-webkit2-4.1\n"
             )
+            server_proc.terminate()
+            server_proc.wait()
             sys.exit(1)
 
         logger.info("desktop: opening window", url=url)
@@ -105,3 +115,8 @@ def start_desktop(dev_mode: bool = False) -> None:
             text_select=True,
         )
         webview.start(gui="gtk" if sys.platform == "linux" else None)
+
+        # Window closed — clean up server
+        logger.info("desktop: window closed, stopping server")
+        server_proc.terminate()
+        server_proc.wait()
