@@ -14,6 +14,8 @@ poetry run pytest                               # All tests
 poetry run pytest -k "memory" -v                # Single keyword
 ```
 
+**Desktop env**: 桌面模式需要 GTK WebKit（系统 Python 3.12 + `python3-gi`）。本项目 Poetry 环境已通过符号链接将系统 `gi`/`cairo` 模块暴露给 venv。不要升级/删除这些符号链接。
+
 ## Architecture
 
 **Desktop App (pywebview)** — Quart server + native OS window. The server and window run in the same process — Quart in a daemon thread, pywebview in the main thread.

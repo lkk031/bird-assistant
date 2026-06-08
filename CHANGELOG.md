@@ -19,6 +19,28 @@
 
 
 
+## 2026-06-08 — 桌面启动器 + 删除按钮 + Python 版本适配
+
+### 🖥️ 桌面启动器（跨平台）
+- **Linux**: `.desktop` 文件 + SVG 图标，安装到 `~/.local/share/applications/`，系统菜单可搜索
+- **Windows / macOS**: README 中添加启动方式指引（快捷方式 / PowerShell / Automator）
+
+### 🐛 删除按钮修复（多轮迭代）
+- 删除按钮在浏览器中不可见 → 改为内联样式直接渲染，不受 CSS 缓存影响
+- 按钮过于显眼 → 改为低调 `×` 符号，hover 对话项时才显示（JS mouseenter/mouseleave 驱动）
+- 最终方案：默认隐藏，鼠标移到对话项上时淡入；鼠标移到 × 上变红
+
+### 🔧 Python 3.12 适配
+- miniconda Python 3.13 缺少 `gi`（PyGObject）模块，无法加载 GTK WebKit
+- 切换 Poetry 环境到系统 Python 3.12：`poetry env use /usr/bin/python3.12`
+- 通过符号链接将系统 `gi` / `cairo` 模块暴露给 Poetry 虚拟环境
+- CLAUDE.md 和 README 添加平台 Python 版本说明
+
+### 🔧 缓存控制
+- 静态资源添加 cache-busting query parameter (`?v=7`)，确保前端更新即时生效
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+
 ## 2026-06-07 — 🎉 桌面化重构：Chainlit → pywebview + Quart
 
 ### 🏗 架构变更
