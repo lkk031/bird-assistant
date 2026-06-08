@@ -11,8 +11,6 @@
   var messageInput = document.getElementById("message-input");
   var sendBtn = document.getElementById("send-btn");
   var newChatBtn = document.getElementById("new-chat-btn");
-  var manageBtn = document.getElementById("manage-btn");
-  var manageHint = document.getElementById("manage-hint");
   var exportBtn = document.getElementById("export-btn");
   var convoList = document.getElementById("conversation-list");
   var statusDot = document.getElementById("status-indicator");
@@ -24,7 +22,6 @@
     conversations: [],
     activeThreadId: null,
     isStreaming: false,
-    managing: false,
     streamController: null,
     currentAssistantMsg: null,
     currentAgent: null,
@@ -386,23 +383,6 @@
     messageInput.style.height = "auto";
     messageInput.style.height =
       Math.min(messageInput.scrollHeight, 150) + "px";
-  });
-
-  // Manage mode toggle
-  manageBtn.addEventListener("click", function () {
-    state.managing = !state.managing;
-    var sidebar = document.getElementById("sidebar");
-    if (state.managing) {
-      sidebar.classList.add("managing");
-      manageBtn.textContent = "✅ 完成";
-      manageBtn.classList.add("active");
-      manageHint.style.display = "inline";
-    } else {
-      sidebar.classList.remove("managing");
-      manageBtn.textContent = "✏️ 管理";
-      manageBtn.classList.remove("active");
-      manageHint.style.display = "none";
-    }
   });
 
   // New conversation button

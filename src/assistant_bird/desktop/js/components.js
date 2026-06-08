@@ -199,11 +199,10 @@ var Components = (function () {
       textDiv.appendChild(title);
       textDiv.appendChild(meta);
 
-      // Delete button — rendered inline, visible on hover via CSS opacity
+      // Delete button — always visible as "删除" text
       var delBtn = document.createElement("button");
       delBtn.className = "convo-delete";
-      delBtn.innerHTML = "&#x2715;";
-      delBtn.title = "删除对话";
+      delBtn.textContent = "删除";
       delBtn.addEventListener("click", function (e) {
         e.stopPropagation();
         if (window.App && window.App.deleteConversation) {

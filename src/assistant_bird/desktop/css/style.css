@@ -89,33 +89,6 @@ body {
   background: var(--accent-hover);
 }
 
-/* ── Manage Mode ───────────────────────────────────────────────────── */
-.sidebar-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.btn-small {
-  padding: 4px 10px;
-  font-size: 11px;
-}
-
-.manage-hint {
-  font-size: 11px;
-  color: var(--warning);
-}
-
-/* Show delete buttons in manage mode */
-#sidebar.managing .convo-item .convo-delete {
-  opacity: 1;
-}
-
-/* Also keep hover visibility as fallback */
-.convo-item:hover .convo-delete {
-  opacity: 1;
-}
-
 #conversation-list {
   flex: 1;
   overflow-y: auto;
@@ -165,30 +138,21 @@ body {
 
 .convo-item .convo-delete {
   flex-shrink: 0;
-  width: 22px;
-  height: 22px;
-  border: none;
-  border-radius: 50%;
+  padding: 2px 8px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
   background: transparent;
-  color: var(--text-muted);
-  font-size: 14px;
-  line-height: 1;
+  color: var(--text-secondary);
+  font-size: 11px;
   cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  opacity: 0;
-  transition: opacity var(--transition), background var(--transition);
-}
-
-.convo-item:hover .convo-delete {
-  opacity: 1;
+  transition: all var(--transition);
+  white-space: nowrap;
 }
 
 .convo-item .convo-delete:hover {
   background: var(--error);
   color: #fff;
-  opacity: 1;
+  border-color: var(--error);
 }
 
 .convo-item .convo-badge {
