@@ -89,6 +89,33 @@ body {
   background: var(--accent-hover);
 }
 
+/* ── Manage Mode ───────────────────────────────────────────────────── */
+.sidebar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-small {
+  padding: 4px 10px;
+  font-size: 11px;
+}
+
+.manage-hint {
+  font-size: 11px;
+  color: var(--warning);
+}
+
+/* Show delete buttons in manage mode */
+#sidebar.managing .convo-item .convo-delete {
+  opacity: 1;
+}
+
+/* Also keep hover visibility as fallback */
+.convo-item:hover .convo-delete {
+  opacity: 1;
+}
+
 #conversation-list {
   flex: 1;
   overflow-y: auto;
