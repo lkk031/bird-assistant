@@ -98,8 +98,10 @@ body {
 }
 
 .convo-item {
-  position: relative;
-  padding: 10px 32px 10px 12px;  /* right padding for delete button */
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 12px;
   border-radius: var(--radius);
   cursor: pointer;
   transition: background var(--transition);
@@ -113,6 +115,11 @@ body {
 .convo-item.active {
   background: var(--bg-input);
   border-color: var(--accent);
+}
+
+.convo-item .convo-text {
+  flex: 1;
+  min-width: 0;
 }
 
 .convo-item .convo-title {
@@ -130,10 +137,7 @@ body {
 }
 
 .convo-item .convo-delete {
-  position: absolute;
-  right: 8px;
-  top: 50%;
-  transform: translateY(-50%);
+  flex-shrink: 0;
   width: 22px;
   height: 22px;
   border: none;
