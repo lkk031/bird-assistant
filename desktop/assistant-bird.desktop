@@ -2,6 +2,7 @@
 Name=鸟助手
 Comment=多 Agent 协作 AI 助手
 Exec=/home/lkk/.cache/pypoetry/virtualenvs/assistant-bird-RGZAw25H-py3.12/bin/assistant-bird
+Path=/home/lkk/assistant-bird
 Icon=/home/lkk/assistant-bird/desktop/assistant-bird.svg
 Terminal=false
 Type=Application
