@@ -1,10 +1,10 @@
 [Desktop Entry]
-Name=鸟助手 (Assistant-Bird)
-Comment=AI Assistant with Multi-Agent Collaboration
-Exec=assistant-bird
-Icon=assistant-bird
+Name=鸟助手
+Comment=多 Agent 协作 AI 助手
+Exec=/home/lkk/.cache/pypoetry/virtualenvs/assistant-bird-RGZAw25H-py3.12/bin/assistant-bird
+Icon=/home/lkk/assistant-bird/desktop/assistant-bird.svg
 Terminal=false
 Type=Application
-Categories=Utility;AI;
-Keywords=ai;assistant;chat;bird;
+Categories=Utility;
+Keywords=ai;assistant;chat;
 StartupWMClass=assistant-bird
