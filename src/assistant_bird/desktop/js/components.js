@@ -199,10 +199,25 @@ var Components = (function () {
       textDiv.appendChild(title);
       textDiv.appendChild(meta);
 
-      // Delete button — always visible as "删除" text
+      // Delete button — inline styles so it's always visible
       var delBtn = document.createElement("button");
       delBtn.className = "convo-delete";
-      delBtn.textContent = "删除";
+      delBtn.textContent = "🗑 删除";
+      delBtn.setAttribute("style",
+        "flex-shrink:0;padding:4px 10px;" +
+        "border:1px solid #e05555;border-radius:4px;" +
+        "background:#3d1f1f;color:#e05555;" +
+        "font-size:12px;cursor:pointer;white-space:nowrap;" +
+        "font-weight:600;"
+      );
+      delBtn.addEventListener("mouseenter", function() {
+        this.style.background = "#e05555";
+        this.style.color = "#fff";
+      });
+      delBtn.addEventListener("mouseleave", function() {
+        this.style.background = "#3d1f1f";
+        this.style.color = "#e05555";
+      });
       delBtn.addEventListener("click", function (e) {
         e.stopPropagation();
         if (window.App && window.App.deleteConversation) {
