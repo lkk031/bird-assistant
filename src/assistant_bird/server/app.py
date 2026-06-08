@@ -48,6 +48,7 @@ def _register_routes(app: Quart) -> None:
     """Register all API and page routes."""
     from assistant_bird.server.routes import (
         handle_chat,
+        handle_delete_conversation,
         handle_export,
         handle_get_messages,
         handle_list_conversations,
@@ -67,6 +68,8 @@ def _register_routes(app: Quart) -> None:
                      handle_get_messages, methods=["GET"])
     app.add_url_rule("/export/<thread_id>", "export",
                      handle_export, methods=["GET"])
+    app.add_url_rule("/conversations/<thread_id>", "delete_conversation",
+                     handle_delete_conversation, methods=["DELETE"])
     app.add_url_rule("/health", "health",
                      _health_check, methods=["GET"])
 

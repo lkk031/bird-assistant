@@ -291,6 +291,32 @@
       });
   }
 
+  // ── Delete Conversation ──────────────────────────────────────────────
+  function deleteConversation(threadId) {
+    if (!confirm("确定要删除此对话吗？此操作不可撤销。")) return;
+
+    fetch("/conversations/" + threadId, { method: "DELETE" })
+      .then(function (r) {
+        return r.json();
+      })
+      .then(function (data) {
+        if (data.deleted) {
+          // If the deleted conversation was active, refresh UI
+          if (threadId === state.activeThreadId) {
+            state.activeThreadId = null;
+            state.currentAssistantMsg = null;
+            state.fullResponse = "";
+            state.hasContent = false;
+            Components.clearChat();
+          }
+          loadConversations();
+        }
+      })
+      .catch(function (err) {
+        console.error("Failed to delete conversation:", err);
+      });
+  }
+
   // ── Export Conversation ─────────────────────────────────────────────
   function exportConversation() {
     if (!state.activeThreadId) return;
@@ -415,6 +441,11 @@
     messageInput.focus();
     setStatus("connected");
   }
+
+  // Expose for external callers (e.g., components.js)
+  window.App = {
+    deleteConversation: deleteConversation,
+  };
 
   // Start when DOM is ready
   if (document.readyState === "loading") {

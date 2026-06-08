@@ -20,6 +20,7 @@ from assistant_bird.memory.context_manager import check_and_manage_context
 from assistant_bird.memory.memory_manager import get_memory_manager
 from assistant_bird.server.session import get_session
 from assistant_bird.ui.conversations import (
+    delete_conversation,
     extract_title,
     load_conversations,
     load_thread_map,
@@ -331,7 +332,9 @@ async def handle_list_conversations() -> Response:
     session = get_session()
     convos = load_conversations()
 
-    # Build a simple list for the frontend
+    # Build the list, skipping empty conversations (0 messages) except
+    # the currently active one, to avoid polluting the sidebar.
+    active_id = session.thread_id
     result = []
     sorted_convos = sorted(
         convos.items(),
@@ -339,11 +342,14 @@ async def handle_list_conversations() -> Response:
         reverse=True,
     )
     for tid, meta in sorted_convos:
+        msg_count = meta.get("message_count", 0)
+        if msg_count == 0 and tid != active_id:
+            continue  # skip empty conversations not currently active
         result.append({
             "id": tid,
             "title": meta.get("title", "未命名"),
             "updated_at": meta.get("updated_at", ""),
-            "message_count": meta.get("message_count", 0),
+            "message_count": msg_count,
             "archived": meta.get("archived", False),
             "continued_in": meta.get("continued_in", ""),
             "continued_from": meta.get("continued_from", ""),
@@ -357,7 +363,12 @@ async def handle_list_conversations() -> Response:
 
 
 async def handle_new_conversation() -> Response:
-    """POST /conversations/new — Create a new conversation."""
+    """POST /conversations/new — Create a new conversation.
+
+    The conversation metadata is NOT persisted yet — it will be lazily
+    registered on the first message via ensure_conversation_exists().
+    This avoids polluting the sidebar with empty 0-message entries.
+    """
     session = get_session()
     new_thread_id = str(uuid.uuid4())
     session.thread_id = new_thread_id
@@ -366,7 +377,6 @@ async def handle_new_conversation() -> Response:
     thread_map["desktop_session"] = new_thread_id
     save_thread_map(thread_map)
 
-    register_conversation(new_thread_id)
     logger.info("api: new conversation", thread_id=new_thread_id)
 
     return Response(
@@ -407,6 +417,32 @@ async def handle_switch_conversation() -> Response:
             "title": convo.get("title", "未命名"),
             "message_count": convo.get("message_count", 0),
         }, ensure_ascii=False),
+        content_type="application/json",
+    )
+
+
+async def handle_delete_conversation(thread_id: str) -> Response:
+    """DELETE /conversations/<thread_id> — Delete a conversation."""
+    conversations = load_conversations()
+    if thread_id not in conversations:
+        return Response("Not found", status=404)
+
+    session = get_session()
+    deleted = delete_conversation(thread_id)
+
+    # If the deleted conversation was the active one, start fresh
+    if session.thread_id == thread_id:
+        new_thread_id = str(uuid.uuid4())
+        session.thread_id = new_thread_id
+        register_conversation(new_thread_id)
+        thread_map = load_thread_map()
+        thread_map["desktop_session"] = new_thread_id
+        save_thread_map(thread_map)
+
+    logger.info("api: deleted conversation", thread_id=thread_id)
+
+    return Response(
+        json.dumps({"deleted": deleted, "thread_id": thread_id}, ensure_ascii=False),
         content_type="application/json",
     )
 

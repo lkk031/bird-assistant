@@ -134,6 +134,20 @@ def update_conversation(
     save_conversations(conversations)
 
 
+def delete_conversation(thread_id: str) -> bool:
+    """Remove a conversation from the metadata index.
+
+    Returns True if the conversation was found and deleted.
+    """
+    conversations = load_conversations()
+    if thread_id in conversations:
+        del conversations[thread_id]
+        save_conversations(conversations)
+        logger.info("delete_conversation: removed", thread_id=thread_id)
+        return True
+    return False
+
+
 # ── Title extraction ──────────────────────────────────────────────────────
 
 

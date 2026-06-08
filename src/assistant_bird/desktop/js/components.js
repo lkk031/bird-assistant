@@ -193,8 +193,21 @@ var Components = (function () {
       var date = (convo.updated_at || "").slice(0, 10);
       meta.textContent = date + " · " + convo.message_count + " 条消息";
 
+      // Delete button (×)
+      var delBtn = document.createElement("button");
+      delBtn.className = "convo-delete";
+      delBtn.textContent = "×";
+      delBtn.title = "删除对话";
+      delBtn.addEventListener("click", function (e) {
+        e.stopPropagation();  // don't trigger conversation switch
+        if (typeof App !== "undefined" && App.deleteConversation) {
+          App.deleteConversation(convo.id);
+        }
+      });
+
       item.appendChild(title);
       item.appendChild(meta);
+      item.appendChild(delBtn);
 
       convoList.appendChild(item);
     });
