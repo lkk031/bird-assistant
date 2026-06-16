@@ -265,68 +265,161 @@ def start_desktop(dev_mode: bool = False) -> None:
                 text_select=True,
             )
 
-            # Inject navigation bar on every page load via WebKit's native
-            # UserContentManager. This is the correct approach because:
-            # 1. WebKit injects the script after DOM is ready — no timing hacks
-            # 2. No glib.idle_add + semaphore deadlock risk (unlike evaluate_js)
-            # 3. Runs on every page automatically — no event handler needed
-            # 4. No thread-safety issues — WebKit handles everything
-            def _register_nav_user_script() -> None:
+            # ── Navigation bar injection ─────────────────────────────────
+            # Two-layer approach (belt + suspenders):
+            #
+            # Layer 1: WebKit UserScript registered via UserContentManager.
+            # Runs automatically on every page after DOM is ready.  No
+            # thread concerns — WebKit handles injection natively.
+            #
+            # Layer 2: Direct GTK signal connection on the WebView's
+            # load-changed signal.  Spawns a background thread that calls
+            # evaluate_js (same pattern pywebview itself uses for its own
+            # JS injection).  Extra insurance if UserScript fails.
+            #
+            # Diagnostics are written to a temp file so we can trace what
+            # path actually executes:
+            #   ~/.local/share/assistant-bird/.nav_debug.log
+
+            _nav_debug = get_app_dir() / ".nav_debug.log"
+
+            def _nav_log(msg: str) -> None:
+                """Write diagnostic line with timestamp."""
+                import datetime as _dt
+                ts = _dt.datetime.now().strftime("%H:%M:%S.%f")[:12]
+                line = f"[{ts}] {msg}\n"
                 try:
-                    import gi
-                    gi.require_version('Gtk', '3.0')
-                    try:
-                        gi.require_version('WebKit2', '4.1')
-                    except ValueError:
-                        gi.require_version('WebKit2', '4.0')
-                    # Access pywebview's internal BrowserView instance to
-                    # get the UserContentManager that manages script
-                    # injection for the webview.
-                    import webview.platforms.gtk as gtk_platform
-                    from gi.repository import WebKit2 as webkit  # noqa: N813
-                    bv = gtk_platform.BrowserView.instances.get(window.uid)
-                    if bv is None:
-                        logger.warning(
-                            "desktop: BrowserView not found, nav bar skipped"
-                        )
-                        return
-
-                    # WebKit2 4.1 renamed whitelist/blacklist to
-                    # allow_list/deny_list. Try the 4.1 names first,
-                    # fall back to 4.0 names.
-                    try:
-                        user_script = webkit.UserScript(
-                            source=_INJECT_NAV_BAR,
-                            injected_frames=(
-                                webkit.UserContentInjectedFrames.TOP_FRAME
-                            ),
-                            injection_time=(
-                                webkit.UserScriptInjectionTime.END
-                            ),
-                            allow_list=[],
-                            deny_list=[],
-                        )
-                    except TypeError:
-                        user_script = webkit.UserScript(
-                            source=_INJECT_NAV_BAR,
-                            injected_frames=(
-                                webkit.UserContentInjectedFrames.TOP_FRAME
-                            ),
-                            injection_time=(
-                                webkit.UserScriptInjectionTime.END
-                            ),
-                            whitelist=[],
-                            blacklist=[],
-                        )
-
-                    bv.manager.add_script(user_script)
-                    logger.info("desktop: nav bar UserScript registered")
+                    with open(_nav_debug, "a") as f:
+                        f.write(line)
                 except Exception:
-                    logger.exception(
-                        "desktop: failed to register nav bar UserScript"
-                    )
+                    pass
+                # Also flush to stdout so the user can see it immediately
+                print(f"[NAV] {msg}", flush=True)
+
+            _nav_log("initialising navigation bar subsystem")
+
+            def _register_nav_user_script() -> None:
+                _nav_log("shown event fired — registering signal handler")
+                try:
+                    import webview.platforms.gtk as gtk_platform
+                    from gi.repository import GLib as glib  # noqa: N813
+
+                    def _connect_to_load_changed() -> None:
+                        _nav_log("idle callback: looking up BrowserView")
+                        bv = gtk_platform.BrowserView.instances.get(
+                            window.uid
+                        )
+                        if bv is None:
+                            _nav_log("ERROR: BrowserView not found")
+                            return
+                        _nav_log(f"BrowserView found, uid={window.uid[:8]}")
+
+                        # -- Layer 1: UserScript -------------------------
+                        try:
+                            import gi as _gi
+                            try:
+                                _gi.require_version('WebKit2', '4.1')
+                            except ValueError:
+                                _gi.require_version('WebKit2', '4.0')
+                            from gi.repository import (  # noqa: N813
+                                WebKit2 as webkit,
+                            )
+
+                            is_41 = webkit.get_major_version() >= 2 and (
+                                webkit.get_minor_version() >= 1
+                            )
+                            _nav_log(
+                                f"WebKit2 {webkit.get_major_version()}"
+                                f".{webkit.get_minor_version()}"
+                                f".{webkit.get_micro_version()}"
+                                f"  allow_list={is_41}"
+                            )
+
+                            try:
+                                user_script = webkit.UserScript(
+                                    source=_INJECT_NAV_BAR,
+                                    injected_frames=(
+                                        webkit.UserContentInjectedFrames
+                                        .TOP_FRAME
+                                    ),
+                                    injection_time=(
+                                        webkit.UserScriptInjectionTime.END
+                                    ),
+                                    allow_list=[],
+                                    deny_list=[],
+                                )
+                            except TypeError:
+                                user_script = webkit.UserScript(
+                                    source=_INJECT_NAV_BAR,
+                                    injected_frames=(
+                                        webkit.UserContentInjectedFrames
+                                        .TOP_FRAME
+                                    ),
+                                    injection_time=(
+                                        webkit.UserScriptInjectionTime.END
+                                    ),
+                                    whitelist=[],
+                                    blacklist=[],
+                                )
+
+                            bv.manager.add_script(user_script)
+                            _nav_log("Layer 1: UserScript added to manager")
+                        except Exception as _exc:
+                            _nav_log(f"Layer 1 FAILED: {_exc}")
+
+                        # -- Layer 2: load-changed signal ----------------
+                        def _on_page_loaded(
+                            _webview, load_event
+                        ) -> None:
+                            if load_event != webkit.LoadEvent.FINISHED:
+                                return
+                            # The naive approach: spawn thread + evaluate_js.
+                            # evaluate_js calls glib.idle_add + semaphore;
+                            # since this handler is ON the GTK main thread,
+                            # we must NOT block it — hence the daemon thread.
+                            import threading as _thr
+                            import time as _time
+
+                            def _inject() -> None:
+                                _time.sleep(0.15)
+                                url = "?"
+                                try:
+                                    url = (
+                                        window.get_current_url() or "?"
+                                    )
+                                    result = window.evaluate_js(
+                                        _INJECT_NAV_BAR
+                                    )
+                                    _nav_log(
+                                        f"Layer 2: injected on {url[:80]} "
+                                        f"→ {result!r}"
+                                    )
+                                except Exception as _exc2:
+                                    _nav_log(
+                                        f"Layer 2: EXCEPTION on "
+                                        f"{url[:80]}: {_exc2}"
+                                    )
+
+                            _thr.Thread(
+                                target=_inject, daemon=True,
+                            ).start()
+
+                        bv.webview.connect(
+                            'load-changed', _on_page_loaded
+                        )
+                        _nav_log(
+                            "Layer 2: connected to load-changed signal"
+                        )
+
+                    glib.idle_add(_connect_to_load_changed)
+                    _nav_log("idle_add scheduled for signal connection")
+                except Exception as _exc3:
+                    _nav_log(f"FATAL in _register_nav_user_script: {_exc3}")
+                    import traceback as _tb
+                    _nav_log(_tb.format_exc())
 
             window.events.shown += _register_nav_user_script
+            _nav_log("registered shown event handler")
 
             webview.start(gui="gtk" if sys.platform == "linux" else None)
             logger.info("desktop: window closed normally")
