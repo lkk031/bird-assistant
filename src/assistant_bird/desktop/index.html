@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>鸟助手 (Assistant-Bird)</title>
-  <link rel="stylesheet" href="/static/css/style.css?v=10">
+  <link rel="stylesheet" href="/static/css/style.css?v=11">
 </head>
 <body>
   <!-- Sidebar -->
@@ -47,23 +47,9 @@
     </div>
   </main>
 
-  <!-- In-App Browser Overlay — direct child of body to avoid overflow clipping -->
-  <div id="browser-overlay" class="hidden">
-    <div class="browser-toolbar">
-      <button id="browser-back" title="后退" disabled>◀</button>
-      <button id="browser-forward" title="前进" disabled>▶</button>
-      <button id="browser-reload" title="刷新">↻</button>
-      <span class="browser-url" id="browser-url"></span>
-      <button id="browser-close" class="browser-close" title="返回聊天">✕</button>
-    </div>
-    <div class="browser-iframe-wrap">
-      <iframe id="browser-iframe"></iframe>
-    </div>
-  </div>
-
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script src="/static/js/stream.js?v=2"></script>
-  <script src="/static/js/components.js?v=10"></script>
-  <script src="/static/js/app.js?v=10"></script>
+  <script src="/static/js/components.js?v=11"></script>
+  <script src="/static/js/app.js?v=11"></script>
 </body>
 </html>

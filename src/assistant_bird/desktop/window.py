@@ -130,6 +130,65 @@ def _wait_for_server(url: str, timeout: float = 30.0) -> bool:
     return False
 
 
+# JS injected into every external page to provide back/forward/home navigation.
+# The toolbar hides itself when navigating back to the chat (localhost origin).
+_INJECT_NAV_BAR = r"""
+(function () {
+  if (document.getElementById('__ab_navbar__')) return;  // already injected
+  if (window.location.hostname === 'localhost') return;   // chat page, skip
+
+  var bar = document.createElement('div');
+  bar.id = '__ab_navbar__';
+  bar.innerHTML =
+    '<button id="__ab_back__" title="后退 (Alt+←)">◀</button>' +
+    '<button id="__ab_fwd__" title="前进 (Alt+→)">▶</button>' +
+    '<button id="__ab_home__" title="返回鸟助手">🏠 返回聊天</button>' +
+    '<span id="__ab_url__"></span>';
+  bar.setAttribute('style',
+    'position:fixed;top:0;left:0;right:0;z-index:2147483647;' +
+    'display:flex;align-items:center;gap:4px;padding:6px 10px;' +
+    'background:#1e1f29;border-bottom:1px solid #3a3b47;' +
+    'font-family:-apple-system,BlinkMacSystemFont,sans-serif;font-size:13px;'
+  );
+
+  var back = bar.querySelector('#__ab_back__');
+  var fwd  = bar.querySelector('#__ab_fwd__');
+  var home = bar.querySelector('#__ab_home__');
+  var urlSpan = bar.querySelector('#__ab_url__');
+
+  var style = document.createElement('style');
+  style.textContent =
+    '#__ab_navbar__ button{padding:4px 10px;border:1px solid #3a3b47;' +
+    'border-radius:3px;background:transparent;color:#9e9eae;cursor:pointer;}' +
+    '#__ab_navbar__ button:hover{background:#2a2b37;color:#e8e8ed;}' +
+    '#__ab_navbar__ button:disabled{opacity:0.3;cursor:default;}' +
+    '#__ab_navbar__ #__ab_url__{flex:1;margin-left:8px;color:#6b6b7b;' +
+    'font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}' +
+    'body{padding-top:36px !important;}';  // push content down
+
+  document.head.appendChild(style);
+  document.body.insertBefore(bar, document.body.firstChild);
+  document.body.style.paddingTop = '36px';
+
+  urlSpan.textContent = window.location.href;
+
+  back.addEventListener('click', function(){window.history.back();});
+  fwd.addEventListener('click', function(){window.history.forward();});
+  home.addEventListener('click', function(){
+    window.location.href = 'http://localhost:19900';
+  });
+
+  // Remove bar when returning to chat (popstate fires on back/forward)
+  window.addEventListener('popstate', function(){
+    if (window.location.hostname === 'localhost') {
+      var b = document.getElementById('__ab_navbar__');
+      if (b) { b.remove(); document.body.style.paddingTop = ''; }
+    }
+  });
+})();
+"""
+
+
 def start_desktop(dev_mode: bool = False) -> None:
     """Start the desktop application.
 
@@ -195,7 +254,7 @@ def start_desktop(dev_mode: bool = False) -> None:
                 sys.exit(1)
 
             logger.info("desktop: opening window", url=url)
-            webview.create_window(
+            window = webview.create_window(
                 title=WINDOW_TITLE,
                 url=url,
                 width=DEFAULT_WIDTH,
@@ -203,6 +262,17 @@ def start_desktop(dev_mode: bool = False) -> None:
                 min_size=(MIN_WIDTH, MIN_HEIGHT),
                 text_select=True,
             )
+
+            # Inject navigation bar on every page load so external pages
+            # get back/forward/home buttons injected directly into their DOM.
+            def on_loaded():
+                try:
+                    window.evaluate_js(_INJECT_NAV_BAR)
+                except Exception:
+                    pass  # best-effort; don't crash on injection failure
+
+            window.events.loaded += on_loaded
+
             webview.start(gui="gtk" if sys.platform == "linux" else None)
             logger.info("desktop: window closed normally")
     except KeyboardInterrupt:
