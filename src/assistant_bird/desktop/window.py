@@ -324,19 +324,18 @@ def start_desktop(dev_mode: bool = False) -> None:
                             from gi.repository import (  # noqa: N813
                                 WebKit2 as webkit,
                             )
-
-                            is_41 = webkit.get_major_version() >= 2 and (
-                                webkit.get_minor_version() >= 1
-                            )
                             _nav_log(
                                 f"WebKit2 {webkit.get_major_version()}"
                                 f".{webkit.get_minor_version()}"
                                 f".{webkit.get_micro_version()}"
-                                f"  allow_list={is_41}"
                             )
 
-                            try:
-                                user_script = webkit.UserScript(
+                            # Try multiple UserScript constructor styles
+                            # because WebKit2 API varies across versions.
+                            user_script = None
+                            constructors = [
+                                # 4.1 style: new() + allow_list/deny_list
+                                lambda: webkit.UserScript.new(
                                     source=_INJECT_NAV_BAR,
                                     injected_frames=(
                                         webkit.UserContentInjectedFrames
@@ -347,9 +346,9 @@ def start_desktop(dev_mode: bool = False) -> None:
                                     ),
                                     allow_list=[],
                                     deny_list=[],
-                                )
-                            except TypeError:
-                                user_script = webkit.UserScript(
+                                ),
+                                # 4.0 style: new() + whitelist/blacklist
+                                lambda: webkit.UserScript.new(
                                     source=_INJECT_NAV_BAR,
                                     injected_frames=(
                                         webkit.UserContentInjectedFrames
@@ -360,10 +359,35 @@ def start_desktop(dev_mode: bool = False) -> None:
                                     ),
                                     whitelist=[],
                                     blacklist=[],
-                                )
+                                ),
+                                # GObject constructor style (no filter args)
+                                lambda: webkit.UserScript(
+                                    source=_INJECT_NAV_BAR,
+                                    injected_frames=(
+                                        webkit.UserContentInjectedFrames
+                                        .TOP_FRAME
+                                    ),
+                                    injection_time=(
+                                        webkit.UserScriptInjectionTime.END
+                                    ),
+                                ),
+                            ]
+                            for ctor in constructors:
+                                try:
+                                    user_script = ctor()
+                                    break
+                                except (TypeError, AttributeError):
+                                    continue
 
-                            bv.manager.add_script(user_script)
-                            _nav_log("Layer 1: UserScript added to manager")
+                            if user_script is not None:
+                                bv.manager.add_script(user_script)
+                                _nav_log(
+                                    "Layer 1: UserScript added to manager"
+                                )
+                            else:
+                                _nav_log(
+                                    "Layer 1: all constructors failed"
+                                )
                         except Exception as _exc:
                             _nav_log(f"Layer 1 FAILED: {_exc}")
 
@@ -373,36 +397,26 @@ def start_desktop(dev_mode: bool = False) -> None:
                         ) -> None:
                             if load_event != webkit.LoadEvent.FINISHED:
                                 return
-                            # The naive approach: spawn thread + evaluate_js.
-                            # evaluate_js calls glib.idle_add + semaphore;
-                            # since this handler is ON the GTK main thread,
-                            # we must NOT block it — hence the daemon thread.
-                            import threading as _thr
-                            import time as _time
-
-                            def _inject() -> None:
-                                _time.sleep(0.15)
-                                url = "?"
-                                try:
-                                    url = (
-                                        window.get_current_url() or "?"
-                                    )
-                                    result = window.evaluate_js(
-                                        _INJECT_NAV_BAR
-                                    )
-                                    _nav_log(
-                                        f"Layer 2: injected on {url[:80]} "
-                                        f"→ {result!r}"
-                                    )
-                                except Exception as _exc2:
-                                    _nav_log(
-                                        f"Layer 2: EXCEPTION on "
-                                        f"{url[:80]}: {_exc2}"
-                                    )
-
-                            _thr.Thread(
-                                target=_inject, daemon=True,
-                            ).start()
+                            # Direct WebKit JS evaluation — no pywebview
+                            # dependency, no eval() wrapper, no semaphore
+                            # deadlock risk.  We're already on the GTK
+                            # main thread (signal handler), so calling
+                            # evaluate_javascript is safe and immediate.
+                            try:
+                                _webview.evaluate_javascript(
+                                    script=_INJECT_NAV_BAR,
+                                    length=len(
+                                        _INJECT_NAV_BAR.encode("utf-8")
+                                    ),
+                                    world_name=None,
+                                    source_uri=None,
+                                    cancellable=None,
+                                    callback=None,  # fire-and-forget
+                                )
+                            except Exception as _exc2:
+                                _nav_log(
+                                    f"Layer 2: dispatch failed — {_exc2}"
+                                )
 
                         bv.webview.connect(
                             'load-changed', _on_page_loaded
