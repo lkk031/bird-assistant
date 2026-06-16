@@ -265,11 +265,24 @@ def start_desktop(dev_mode: bool = False) -> None:
 
             # Inject navigation bar on every page load so external pages
             # get back/forward/home buttons injected directly into their DOM.
-            def on_loaded():
+            #
+            # IMPORTANT: cannot call window.evaluate_js() directly from the
+            # loaded handler — it uses glib.idle_add + a blocking semaphore,
+            # which deadlocks when the handler runs on the GTK main thread.
+            # Instead, spawn a daemon thread that waits briefly for GTK to
+            # finish processing the load event, then injects the JS.
+            def _inject_nav_async():
                 try:
+                    time.sleep(0.3)  # let GTK finish current event
                     window.evaluate_js(_INJECT_NAV_BAR)
                 except Exception:
-                    pass  # best-effort; don't crash on injection failure
+                    pass  # best-effort
+
+            def on_loaded():
+                import threading
+                threading.Thread(
+                    target=_inject_nav_async, daemon=True,
+                ).start()
 
             window.events.loaded += on_loaded
 
