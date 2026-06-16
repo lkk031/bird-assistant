@@ -134,8 +134,8 @@ def _wait_for_server(url: str, timeout: float = 30.0) -> bool:
 # The toolbar hides itself when navigating back to the chat (localhost origin).
 _INJECT_NAV_BAR = r"""
 (function () {
-  if (document.getElementById('__ab_navbar__')) return;  // already injected
-  if (window.location.hostname === 'localhost') return;   // chat page, skip
+  if (document.getElementById('__ab_navbar__')) return;
+  if (window.location.hostname === 'localhost') return;
 
   var bar = document.createElement('div');
   bar.id = '__ab_navbar__';
@@ -185,6 +185,8 @@ _INJECT_NAV_BAR = r"""
       if (b) { b.remove(); document.body.style.paddingTop = ''; }
     }
   });
+
+  return 'INJECTED';
 })();
 """
 
@@ -263,28 +265,68 @@ def start_desktop(dev_mode: bool = False) -> None:
                 text_select=True,
             )
 
-            # Inject navigation bar on every page load so external pages
-            # get back/forward/home buttons injected directly into their DOM.
-            #
-            # IMPORTANT: cannot call window.evaluate_js() directly from the
-            # loaded handler — it uses glib.idle_add + a blocking semaphore,
-            # which deadlocks when the handler runs on the GTK main thread.
-            # Instead, spawn a daemon thread that waits briefly for GTK to
-            # finish processing the load event, then injects the JS.
-            def _inject_nav_async():
+            # Inject navigation bar on every page load via WebKit's native
+            # UserContentManager. This is the correct approach because:
+            # 1. WebKit injects the script after DOM is ready — no timing hacks
+            # 2. No glib.idle_add + semaphore deadlock risk (unlike evaluate_js)
+            # 3. Runs on every page automatically — no event handler needed
+            # 4. No thread-safety issues — WebKit handles everything
+            def _register_nav_user_script() -> None:
                 try:
-                    time.sleep(0.3)  # let GTK finish current event
-                    window.evaluate_js(_INJECT_NAV_BAR)
+                    import gi
+                    gi.require_version('Gtk', '3.0')
+                    try:
+                        gi.require_version('WebKit2', '4.1')
+                    except ValueError:
+                        gi.require_version('WebKit2', '4.0')
+                    # Access pywebview's internal BrowserView instance to
+                    # get the UserContentManager that manages script
+                    # injection for the webview.
+                    import webview.platforms.gtk as gtk_platform
+                    from gi.repository import WebKit2 as webkit  # noqa: N813
+                    bv = gtk_platform.BrowserView.instances.get(window.uid)
+                    if bv is None:
+                        logger.warning(
+                            "desktop: BrowserView not found, nav bar skipped"
+                        )
+                        return
+
+                    # WebKit2 4.1 renamed whitelist/blacklist to
+                    # allow_list/deny_list. Try the 4.1 names first,
+                    # fall back to 4.0 names.
+                    try:
+                        user_script = webkit.UserScript(
+                            source=_INJECT_NAV_BAR,
+                            injected_frames=(
+                                webkit.UserContentInjectedFrames.TOP_FRAME
+                            ),
+                            injection_time=(
+                                webkit.UserScriptInjectionTime.END
+                            ),
+                            allow_list=[],
+                            deny_list=[],
+                        )
+                    except TypeError:
+                        user_script = webkit.UserScript(
+                            source=_INJECT_NAV_BAR,
+                            injected_frames=(
+                                webkit.UserContentInjectedFrames.TOP_FRAME
+                            ),
+                            injection_time=(
+                                webkit.UserScriptInjectionTime.END
+                            ),
+                            whitelist=[],
+                            blacklist=[],
+                        )
+
+                    bv.manager.add_script(user_script)
+                    logger.info("desktop: nav bar UserScript registered")
                 except Exception:
-                    pass  # best-effort
+                    logger.exception(
+                        "desktop: failed to register nav bar UserScript"
+                    )
 
-            def on_loaded():
-                import threading
-                threading.Thread(
-                    target=_inject_nav_async, daemon=True,
-                ).start()
-
-            window.events.loaded += on_loaded
+            window.events.shown += _register_nav_user_script
 
             webview.start(gui="gtk" if sys.platform == "linux" else None)
             logger.info("desktop: window closed normally")
