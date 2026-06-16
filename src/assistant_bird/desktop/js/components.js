@@ -311,27 +311,16 @@ var Components = (function () {
   /**
    * Render markdown text into HTML using marked.js.
    *
-   * All links are given target="_blank" so they open in the system
-   * browser instead of navigating the webview away from the chat UI.
-   * A delegated click handler on the chat container intercepts clicks
-   * and opens the URL externally.
+   * Links are rendered as normal <a> tags. External link clicks are
+   * intercepted and opened in an in-app iframe overlay with navigation
+   * controls (back/forward/home). This keeps the chat UI intact.
    *
    * @param {string} text
    * @returns {string} HTML string
    */
   function renderMarkdown(text) {
     if (typeof marked !== "undefined") {
-      // Custom renderer: force all links to open externally
-      var renderer = new marked.Renderer();
-      renderer.link = function (href, title, text) {
-        var link = marked.Renderer.prototype.link.call(this, href, title, text);
-        // Insert target and class before the closing >
-        return link.replace(
-          "<a ",
-          '<a target="_blank" rel="noopener noreferrer" class="ext-link" '
-        );
-      };
-      marked.setOptions({ breaks: true, gfm: true, renderer: renderer });
+      marked.setOptions({ breaks: true, gfm: true });
       return marked.parse(text);
     }
     // Fallback: escape HTML and convert newlines
@@ -342,24 +331,121 @@ var Components = (function () {
       .replace(/\n/g, "<br>");
   }
 
-  // ── External Link Interception ──────────────────────────────────────
+  // ── In-App Browser Overlay ──────────────────────────────────────────
 
-  // Delegate click events on the chat container to catch all external
-  // link clicks. This prevents the webview from navigating away from
-  // the chat UI and opens the link in the system browser instead.
+  var Browser = {
+    _history: [],
+    _index: -1,
+    _overlay: null,
+    _iframe: null,
+    _urlDisplay: null,
+    _backBtn: null,
+    _fwdBtn: null,
+    _reloadBtn: null,
+    _init: false,
+    _loadTimer: null,
+
+    _ensure: function () {
+      if (this._init) return;
+      this._overlay = document.getElementById("browser-overlay");
+      this._iframe = document.getElementById("browser-iframe");
+      this._urlDisplay = document.getElementById("browser-url");
+      this._backBtn = document.getElementById("browser-back");
+      this._fwdBtn = document.getElementById("browser-forward");
+      this._reloadBtn = document.getElementById("browser-reload");
+      this._init = true;
+    },
+
+    open: function (url) {
+      this._ensure();
+      if (this._index < this._history.length - 1) {
+        this._history = this._history.slice(0, this._index + 1);
+      }
+      this._history.push(url);
+      this._index = this._history.length - 1;
+      this._navigate(url);
+      this._overlay.classList.remove("hidden");
+      this._updateButtons();
+    },
+
+    close: function () {
+      this._ensure();
+      this._overlay.classList.add("hidden");
+      this._iframe.src = "about:blank";
+      this._history = [];
+      this._index = -1;
+      if (this._loadTimer) clearTimeout(this._loadTimer);
+      this._updateButtons();
+    },
+
+    back: function () {
+      if (this._index <= 0) return;
+      this._index--;
+      this._navigate(this._history[this._index]);
+      this._updateButtons();
+    },
+
+    forward: function () {
+      if (this._index >= this._history.length - 1) return;
+      this._index++;
+      this._navigate(this._history[this._index]);
+      this._updateButtons();
+    },
+
+    reload: function () {
+      if (this._index < 0) return;
+      this._navigate(this._history[this._index]);
+    },
+
+    _navigate: function (url) {
+      this._urlDisplay.textContent = url;
+      this._urlDisplay.title = url;
+      this._iframe.style.display = "";
+      // Clear any previous load timeout
+      if (this._loadTimer) clearTimeout(this._loadTimer);
+      this._iframe.src = url;
+    },
+
+    _updateButtons: function () {
+      this._backBtn.disabled = this._index <= 0;
+      this._fwdBtn.disabled = this._index >= this._history.length - 1;
+    },
+
+    isOpen: function () {
+      this._ensure();
+      return !this._overlay.classList.contains("hidden");
+    },
+  };
+
+  // Wire up browser toolbar buttons
+  document.addEventListener("DOMContentLoaded", function () {
+    Browser._ensure();
+    document.getElementById("browser-back").addEventListener("click", function () {
+      Browser.back();
+    });
+    document.getElementById("browser-forward").addEventListener("click", function () {
+      Browser.forward();
+    });
+    document.getElementById("browser-reload").addEventListener("click", function () {
+      Browser.reload();
+    });
+    document.getElementById("browser-close").addEventListener("click", function () {
+      Browser.close();
+    });
+  });
+
+  // Intercept external link clicks in the chat container
   chatContainer.addEventListener("click", function (e) {
     var link = e.target.closest("a");
     if (!link || !link.href) return;
 
-    // Only intercept external links (http/https)
+    // Only intercept external links (http / https)
     if (link.href.startsWith("http://") || link.href.startsWith("https://")) {
+      // Check if it's our own origin — let those pass through
+      if (link.origin === window.location.origin) return;
+
       e.preventDefault();
-      try {
-        window.open(link.href, "_blank");
-      } catch (_) {
-        // Fallback: may fail in some webview configurations
-        window.location.href = link.href;
-      }
+      Browser.open(link.href);
     }
   });
 

@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>鸟助手 (Assistant-Bird)</title>
-  <link rel="stylesheet" href="/static/css/style.css?v=8">
+  <link rel="stylesheet" href="/static/css/style.css?v=9">
 </head>
 <body>
   <!-- Sidebar -->
@@ -38,6 +38,20 @@
       </div>
     </div>
 
+    <!-- In-App Browser Overlay — loads external links in an iframe with nav -->
+    <div id="browser-overlay" class="hidden">
+      <div class="browser-toolbar">
+        <button id="browser-back" title="后退" disabled>◀</button>
+        <button id="browser-forward" title="前进" disabled>▶</button>
+        <button id="browser-reload" title="刷新">↻</button>
+        <span class="browser-url" id="browser-url"></span>
+        <button id="browser-close" class="browser-close" title="返回聊天">✕</button>
+      </div>
+      <div class="browser-iframe-wrap">
+        <iframe id="browser-iframe" sandbox="allow-scripts allow-same-origin allow-forms allow-popups"></iframe>
+      </div>
+    </div>
+
     <!-- Input Area -->
     <div id="input-area">
       <label for="file-input" id="attach-btn" title="上传文件">📎</label>
@@ -49,7 +63,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script src="/static/js/stream.js?v=2"></script>
-  <script src="/static/js/components.js?v=8"></script>
-  <script src="/static/js/app.js?v=8"></script>
+  <script src="/static/js/components.js?v=9"></script>
+  <script src="/static/js/app.js?v=9"></script>
 </body>
 </html>
