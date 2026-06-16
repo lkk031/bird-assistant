@@ -266,55 +266,38 @@ def start_desktop(dev_mode: bool = False) -> None:
             )
 
             # ── Navigation bar injection ─────────────────────────────────
-            # Two-layer approach (belt + suspenders):
+            # When the user clicks external links in chat, the webview
+            # navigates away from the chat UI.  We inject a floating nav
+            # bar (back / forward / return-to-chat) on external pages so
+            # the user isn't stranded.
             #
-            # Layer 1: WebKit UserScript registered via UserContentManager.
-            # Runs automatically on every page after DOM is ready.  No
-            # thread concerns — WebKit handles injection natively.
+            # Two complementary mechanisms (both are lightweight):
             #
-            # Layer 2: Direct GTK signal connection on the WebView's
-            # load-changed signal.  Spawns a background thread that calls
-            # evaluate_js (same pattern pywebview itself uses for its own
-            # JS injection).  Extra insurance if UserScript fails.
+            # 1. WebKit UserScript — registered on the UserContentManager.
+            #    WebKit injects it on every page after the DOM is ready.
+            #    No thread concerns — handled natively by the engine.
             #
-            # Diagnostics are written to a temp file so we can trace what
-            # path actually executes:
-            #   ~/.local/share/assistant-bird/.nav_debug.log
-
-            _nav_debug = get_app_dir() / ".nav_debug.log"
-
-            def _nav_log(msg: str) -> None:
-                """Write diagnostic line with timestamp."""
-                import datetime as _dt
-                ts = _dt.datetime.now().strftime("%H:%M:%S.%f")[:12]
-                line = f"[{ts}] {msg}\n"
-                try:
-                    with open(_nav_debug, "a") as f:
-                        f.write(line)
-                except Exception:
-                    pass
-                # Also flush to stdout so the user can see it immediately
-                print(f"[NAV] {msg}", flush=True)
-
-            _nav_log("initialising navigation bar subsystem")
-
-            def _register_nav_user_script() -> None:
-                _nav_log("shown event fired — registering signal handler")
+            # 2. load-changed signal hook — direct WebKit
+            #    evaluate_javascript() call from the GTK main thread.
+            #    Bypasses pywebview's eval() wrapper (which depends on the
+            #    pywebview JS API being present on the page).
+            def _setup_nav_injection() -> None:
                 try:
                     import webview.platforms.gtk as gtk_platform
                     from gi.repository import GLib as glib  # noqa: N813
 
-                    def _connect_to_load_changed() -> None:
-                        _nav_log("idle callback: looking up BrowserView")
+                    def _on_idle() -> None:
                         bv = gtk_platform.BrowserView.instances.get(
                             window.uid
                         )
                         if bv is None:
-                            _nav_log("ERROR: BrowserView not found")
+                            logger.warning(
+                                "desktop: BrowserView not found,"
+                                " nav bar skipped"
+                            )
                             return
-                        _nav_log(f"BrowserView found, uid={window.uid[:8]}")
 
-                        # -- Layer 1: UserScript -------------------------
+                        # -- UserScript (every page, after DOM ready) --
                         try:
                             import gi as _gi
                             try:
@@ -324,17 +307,11 @@ def start_desktop(dev_mode: bool = False) -> None:
                             from gi.repository import (  # noqa: N813
                                 WebKit2 as webkit,
                             )
-                            _nav_log(
-                                f"WebKit2 {webkit.get_major_version()}"
-                                f".{webkit.get_minor_version()}"
-                                f".{webkit.get_micro_version()}"
-                            )
 
-                            # Try multiple UserScript constructor styles
-                            # because WebKit2 API varies across versions.
+                            # UserScript constructor API varies across
+                            # WebKit2 versions.  Try known signatures.
                             user_script = None
-                            constructors = [
-                                # 4.1 style: new() + allow_list/deny_list
+                            for ctor in (
                                 lambda: webkit.UserScript.new(
                                     source=_INJECT_NAV_BAR,
                                     injected_frames=(
@@ -347,7 +324,6 @@ def start_desktop(dev_mode: bool = False) -> None:
                                     allow_list=[],
                                     deny_list=[],
                                 ),
-                                # 4.0 style: new() + whitelist/blacklist
                                 lambda: webkit.UserScript.new(
                                     source=_INJECT_NAV_BAR,
                                     injected_frames=(
@@ -360,7 +336,6 @@ def start_desktop(dev_mode: bool = False) -> None:
                                     whitelist=[],
                                     blacklist=[],
                                 ),
-                                # GObject constructor style (no filter args)
                                 lambda: webkit.UserScript(
                                     source=_INJECT_NAV_BAR,
                                     injected_frames=(
@@ -371,8 +346,7 @@ def start_desktop(dev_mode: bool = False) -> None:
                                         webkit.UserScriptInjectionTime.END
                                     ),
                                 ),
-                            ]
-                            for ctor in constructors:
+                            ):
                                 try:
                                     user_script = ctor()
                                     break
@@ -381,27 +355,19 @@ def start_desktop(dev_mode: bool = False) -> None:
 
                             if user_script is not None:
                                 bv.manager.add_script(user_script)
-                                _nav_log(
-                                    "Layer 1: UserScript added to manager"
-                                )
-                            else:
-                                _nav_log(
-                                    "Layer 1: all constructors failed"
-                                )
-                        except Exception as _exc:
-                            _nav_log(f"Layer 1 FAILED: {_exc}")
+                        except Exception:
+                            logger.exception(
+                                "desktop: UserScript registration failed"
+                            )
 
-                        # -- Layer 2: load-changed signal ----------------
+                        # -- load-changed hook (backup) --
                         def _on_page_loaded(
                             _webview, load_event
                         ) -> None:
                             if load_event != webkit.LoadEvent.FINISHED:
                                 return
-                            # Direct WebKit JS evaluation — no pywebview
-                            # dependency, no eval() wrapper, no semaphore
-                            # deadlock risk.  We're already on the GTK
-                            # main thread (signal handler), so calling
-                            # evaluate_javascript is safe and immediate.
+                            # Direct WebKit call — no pywebview wrapper,
+                            # no eval(), no semaphore deadlock.
                             try:
                                 _webview.evaluate_javascript(
                                     script=_INJECT_NAV_BAR,
@@ -413,27 +379,20 @@ def start_desktop(dev_mode: bool = False) -> None:
                                     cancellable=None,
                                     callback=None,  # fire-and-forget
                                 )
-                            except Exception as _exc2:
-                                _nav_log(
-                                    f"Layer 2: dispatch failed — {_exc2}"
-                                )
+                            except Exception:
+                                pass
 
                         bv.webview.connect(
                             'load-changed', _on_page_loaded
                         )
-                        _nav_log(
-                            "Layer 2: connected to load-changed signal"
-                        )
 
-                    glib.idle_add(_connect_to_load_changed)
-                    _nav_log("idle_add scheduled for signal connection")
-                except Exception as _exc3:
-                    _nav_log(f"FATAL in _register_nav_user_script: {_exc3}")
-                    import traceback as _tb
-                    _nav_log(_tb.format_exc())
+                    glib.idle_add(_on_idle)
+                except Exception:
+                    logger.exception(
+                        "desktop: nav bar injection setup failed"
+                    )
 
-            window.events.shown += _register_nav_user_script
-            _nav_log("registered shown event handler")
+            window.events.shown += _setup_nav_injection
 
             webview.start(gui="gtk" if sys.platform == "linux" else None)
             logger.info("desktop: window closed normally")
