@@ -363,6 +363,7 @@ var Components = (function () {
       }
       this._history.push(url);
       this._index = this._history.length - 1;
+      this._iframe.style.display = "block";
       this._navigate(url);
       this._overlay.classList.remove("hidden");
       this._updateButtons();
