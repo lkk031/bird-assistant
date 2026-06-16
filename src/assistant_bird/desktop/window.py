@@ -14,6 +14,7 @@ import subprocess
 import sys
 import time
 
+from assistant_bird.app_dir import get_app_dir
 from assistant_bird.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -27,6 +28,35 @@ MIN_HEIGHT = 600
 
 # Module path for hypercorn to load the Quart app
 APP_MODULE = "assistant_bird.server.app:create_app()"
+
+# PID lock file — prevents multiple instances from racing on startup
+_LOCK_FILE = get_app_dir() / ".app.lock"
+
+
+def _acquire_lock() -> bool:
+    """Try to acquire the single-instance lock. Returns True on success."""
+    if _LOCK_FILE.exists():
+        try:
+            old_pid = int(_LOCK_FILE.read_text().strip())
+            # Check if the old process is still alive
+            os.kill(old_pid, 0)  # signal 0 = just check existence
+            logger.info("desktop: another instance is already running",
+                       pid=old_pid)
+            return False
+        except (ValueError, OSError):
+            # PID file is stale — old process is dead
+            _LOCK_FILE.unlink(missing_ok=True)
+
+    _LOCK_FILE.write_text(str(os.getpid()))
+    return True
+
+
+def _release_lock() -> None:
+    """Release the single-instance lock."""
+    try:
+        _LOCK_FILE.unlink(missing_ok=True)
+    except Exception:
+        pass
 
 
 def _kill_existing_server(port: int) -> None:
@@ -109,6 +139,11 @@ def start_desktop(dev_mode: bool = False) -> None:
     """
     url = f"http://localhost:{DEFAULT_PORT}"
 
+    # Single-instance lock — refuse to start if already running
+    if not _acquire_lock():
+        print("⚠️  鸟助手已在运行中，请查看系统托盘或窗口。")
+        sys.exit(0)
+
     # Kill any lingering server from a previous crashed session.
     # This ensures the app can restart after an unclean exit.
     _kill_existing_server(DEFAULT_PORT)
@@ -180,3 +215,4 @@ def start_desktop(dev_mode: bool = False) -> None:
         # the hypercorn process stays alive and blocks port 19900,
         # preventing subsequent launches.
         _cleanup_server(server_proc)
+        _release_lock()
