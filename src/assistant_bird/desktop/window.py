@@ -10,6 +10,7 @@ background threads, so we run hypercorn in its own process.
 
 import os
 import signal
+import socket
 import subprocess
 import sys
 import time
@@ -31,6 +32,24 @@ APP_MODULE = "assistant_bird.server.app:create_app()"
 
 # PID lock file — prevents multiple instances from racing on startup
 _LOCK_FILE = get_app_dir() / ".app.lock"
+
+
+def _get_lan_ip() -> str:
+    """Return the primary LAN IP address, or '127.0.0.1' if not found.
+
+    Uses a UDP socket trick: connect to a public address to discover
+    the local interface that would be used for that route.  No actual
+    packets are sent.
+    """
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.settimeout(0.1)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception:
+        return "127.0.0.1"
 
 
 def _acquire_lock() -> bool:
@@ -199,6 +218,11 @@ def start_desktop(dev_mode: bool = False) -> None:
                   pywebview window. Useful for UI development.
     """
     url = f"http://localhost:{DEFAULT_PORT}"
+    lan_ip = _get_lan_ip()
+
+    # Print mobile connection URL when on a real LAN
+    if lan_ip != "127.0.0.1":
+        print(f"📱 手机连接地址: http://{lan_ip}:{DEFAULT_PORT}")
 
     # Single-instance lock — refuse to start if already running
     if not _acquire_lock():
