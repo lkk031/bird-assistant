@@ -310,12 +310,28 @@ var Components = (function () {
 
   /**
    * Render markdown text into HTML using marked.js.
+   *
+   * All links are given target="_blank" so they open in the system
+   * browser instead of navigating the webview away from the chat UI.
+   * A delegated click handler on the chat container intercepts clicks
+   * and opens the URL externally.
+   *
    * @param {string} text
    * @returns {string} HTML string
    */
   function renderMarkdown(text) {
     if (typeof marked !== "undefined") {
-      marked.setOptions({ breaks: true, gfm: true });
+      // Custom renderer: force all links to open externally
+      var renderer = new marked.Renderer();
+      renderer.link = function (href, title, text) {
+        var link = marked.Renderer.prototype.link.call(this, href, title, text);
+        // Insert target and class before the closing >
+        return link.replace(
+          "<a ",
+          '<a target="_blank" rel="noopener noreferrer" class="ext-link" '
+        );
+      };
+      marked.setOptions({ breaks: true, gfm: true, renderer: renderer });
       return marked.parse(text);
     }
     // Fallback: escape HTML and convert newlines
@@ -325,6 +341,27 @@ var Components = (function () {
       .replace(/>/g, "&gt;")
       .replace(/\n/g, "<br>");
   }
+
+  // ── External Link Interception ──────────────────────────────────────
+
+  // Delegate click events on the chat container to catch all external
+  // link clicks. This prevents the webview from navigating away from
+  // the chat UI and opens the link in the system browser instead.
+  chatContainer.addEventListener("click", function (e) {
+    var link = e.target.closest("a");
+    if (!link || !link.href) return;
+
+    // Only intercept external links (http/https)
+    if (link.href.startsWith("http://") || link.href.startsWith("https://")) {
+      e.preventDefault();
+      try {
+        window.open(link.href, "_blank");
+      } catch (_) {
+        // Fallback: may fail in some webview configurations
+        window.location.href = link.href;
+      }
+    }
+  });
 
   return {
     createUserMessage: createUserMessage,

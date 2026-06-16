@@ -373,6 +373,18 @@ body {
 
 .message-content a {
   color: var(--accent);
+  text-decoration: none;
+}
+
+.message-content a:hover {
+  text-decoration: underline;
+}
+
+/* External link indicator — shows ↗ after external links */
+.message-content a.ext-link::after {
+  content: " ↗";
+  font-size: 0.8em;
+  opacity: 0.5;
 }
 
 /* ── Agent Badge ───────────────────────────────────────────────────────── */
