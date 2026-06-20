@@ -18,6 +18,24 @@
 ---
 
 
+## 2026-06-20 — 服务器部署支持 + Android 客户端
+
+### 基础设施
+- **pyproject.toml**: 将 `pywebview` 移至可选依赖组，服务端安装无需 GTK 依赖；新增显式 `hypercorn` 依赖
+- **CLAUDE.md**: 更新安装命令，区分服务端和桌面安装
+
+### 服务器部署（`deploy/`）
+- **`deploy.sh`**: 一键部署脚本 — 安装依赖、创建 system 用户、配置 Poetry 虚拟环境、安装 systemd 服务、放行防火墙
+- **`assistant-bird.service`**: systemd 服务文件 — hypercorn 绑定 `0.0.0.0:19900`，开机自启，崩溃自动重启
+
+### 服务器代码
+- **`window.py`**: 新增 `_get_lan_ip()` — 启动时打印局域网 IP
+
+### Android 客户端（`android/`）
+- 全新 Kotlin + Jetpack Compose 项目，25 个源文件
+- 通过 WiFi 局域网连接 Python 后端，完整 SSE 流式支持
+
+
 
 ## 2026-06-08 — 桌面启动器 + 删除按钮 + Python 版本适配
 
