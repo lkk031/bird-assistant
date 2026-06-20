@@ -1,0 +1,25 @@
+[Unit]
+Description=Assistant-Bird (鸟助手) — Multi-Agent AI Assistant
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=assistant-bird
+WorkingDirectory=/opt/assistant-bird
+ExecStart=/opt/assistant-bird/.venv/bin/hypercorn \
+    --bind 0.0.0.0:19900 \
+    --workers 1 \
+    --access-logfile /var/log/assistant-bird/access.log \
+    --error-logfile /var/log/assistant-bird/error.log \
+    "assistant_bird.server.app:create_app()"
+Restart=always
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

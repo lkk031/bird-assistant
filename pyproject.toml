@@ -39,6 +39,12 @@ yt-dlp = "^2026.3.17"
 feedparser = "^6.0.12"
 platformdirs = "^4.10.0"
 quart = "^0.20.0"
+hypercorn = "^0.18.0"
+
+[tool.poetry.group.desktop]
+optional = true
+
+[tool.poetry.group.desktop.dependencies]
 pywebview = "^6.2.1"
 
 [tool.poetry.group.dev.dependencies]

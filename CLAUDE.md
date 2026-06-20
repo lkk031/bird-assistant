@@ -5,6 +5,8 @@
 ## Commands
 
 ```bash
+poetry install                                    # 服务端 / 开发（不需要桌面）
+poetry install --with desktop                     # 含桌面窗口（需要 GTK WebKit）
 poetry run assistant-bird                       # 启动桌面窗口
 poetry run assistant-bird --dev                 # 浏览器开发模式（http://localhost:19900）
 poetry run ruff check src/ tests/               # Lint
